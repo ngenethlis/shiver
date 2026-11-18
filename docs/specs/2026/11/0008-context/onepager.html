@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0008: Time-of-day context</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0008</span>: Time-of-day context</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p>Lines tagged <code>late</code> (“Past midnight, every idea feels brilliant…”)
+can show up at 10 in the morning, and <code>morning</code> lines at night. Tags
+only matter when you pass <code>--tag</code> yourself, so the timer's random
+popups ignore the time completely.</p>
+
+<h2>Proposal</h2>
+<p>Two tags become <strong>context tags</strong>, tied to the local time:</p>
+<table>
+  <tr><th>Tag</th><th>Active</th></tr>
+  <tr><td><code>morning</code></td><td>05:00–11:00</td></tr>
+  <tr><td><code>late</code></td><td>22:00–05:00</td></tr>
+</table>
+<ul>
+  <li><strong>Only in their time:</strong> a line with a context tag is only picked
+    while one of its context tags is active. Lines without context tags can be
+    picked any time.</li>
+  <li><strong>More likely in their time:</strong> while a context is active, its
+    lines are 3× as likely, so the time of day is noticeable.</li>
+  <li><strong>Asking overrides it:</strong> <code>--tag late</code> at noon still
+    gives late lines.</li>
+  <li><strong>Previewing:</strong> <code>--at 23:30</code> on <code>say</code> or
+    <code>notify</code> pretends it's that time.</li>
+</ul>
+<p>Pack authors don't need to change anything: tags they already use for
+<code>morning</code> and <code>late</code> start working on their own.</p>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out (later)</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li><code>morning</code> and <code>late</code> from local time</li>
+        <li>Restrict and boost when picking</li>
+        <li><code>--at HH:MM</code></li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Changing the time windows or the boost (config file, 0010)</li>
+        <li><code>idle</code> (needs desktop-specific idle detection; backlog)</li>
+        <li>Weekday or weekend tags</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Context tags restrict as well as boost.</td>
+      <td>A “past midnight” line at noon is wrong, not just unlikely.</td></tr>
+  <tr><td>The time logic lives in <code>shiver-core</code>, given the time as a number; the binary reads the clock.</td>
+      <td>Keeps the core free of system access and makes it easy to test.</td></tr>
+  <tr><td>Local time via the <code>jiff</code> crate.</td>
+      <td>The standard library can't read the local time zone. <code>jiff</code> is pure Rust, well maintained, and MIT-licensed.</td></tr>
+  <tr><td>If the local time can't be read, no context tag is active (with a warning).</td>
+      <td>Context-tagged lines then only appear with <code>--tag</code>; nothing breaks.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Tests cover the windows (including across midnight), restriction, boost,
+    explicit <code>--tag</code> and <code>--at</code>.</li>
+  <li>All CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

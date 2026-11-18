@@ -93,6 +93,9 @@ struct SayArgs {
     /// Only lines with this tag.
     #[arg(long)]
     tag: Option<String>,
+    /// Pretend it's this time of day (for `morning` and `late` lines).
+    #[arg(long, value_name = "HH:MM", value_parser = parse_clock)]
+    at: Option<u32>,
 }
 
 #[derive(Args)]
@@ -103,6 +106,9 @@ struct NotifyArgs {
     /// Only lines with this tag.
     #[arg(long, conflicts_with = "text")]
     tag: Option<String>,
+    /// Pretend it's this time of day (for `morning` and `late` lines).
+    #[arg(long, value_name = "HH:MM", value_parser = parse_clock, conflicts_with = "text")]
+    at: Option<u32>,
     /// Show this text instead of a random line.
     #[arg(long, requires = "voice")]
     text: Option<String>,
@@ -165,6 +171,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let filter = Filter {
                 voice: args.voice,
                 tag: args.tag,
+                context: context(args.at),
             };
             let recent = Recent::load();
             let line = pick(&chorus, &dir, &filter, &recent, &mut rng)?;
@@ -183,6 +190,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                     let filter = Filter {
                         voice: args.voice,
                         tag: args.tag,
+                        context: context(args.at),
                     };
                     let recent = Recent::load();
                     let line = pick(&chorus, &dir, &filter, &recent, &mut rng)?;
@@ -242,6 +250,40 @@ fn run_timer(action: TimerAction, packs_dir: Option<&Path>) -> anyhow::Result<()
         println!("{line}");
     }
     Ok(())
+}
+
+/// Parses `HH:MM` (00:00 to 23:59) into minutes after midnight.
+fn parse_clock(s: &str) -> Result<u32, String> {
+    let err = || format!("invalid time `{s}` (use HH:MM, e.g. 23:30)");
+    let (h, m) = s.split_once(':').ok_or_else(err)?;
+    if h.len() != 2 || m.len() != 2 {
+        return Err(err());
+    }
+    let (h, m): (u32, u32) = (h.parse().map_err(|_| err())?, m.parse().map_err(|_| err())?);
+    if h < 24 && m < 60 {
+        Ok(h * 60 + m)
+    } else {
+        Err(err())
+    }
+}
+
+/// The time-of-day context: `--at` if given, else the local time.
+fn context(at: Option<u32>) -> shiver_core::Context {
+    if let Some(minutes) = at {
+        return shiver_core::Context::at(minutes);
+    }
+    match jiff::tz::TimeZone::try_system() {
+        Ok(tz) => {
+            let now = jiff::Timestamp::now().to_zoned_datetime(tz);
+            let minutes = u32::try_from(now.hour()).unwrap_or(0) * 60
+                + u32::try_from(now.minute()).unwrap_or(0);
+            shiver_core::Context::at(minutes)
+        }
+        Err(e) => {
+            output::warn(format!("can't read the local time: {e}"));
+            shiver_core::Context::none()
+        }
+    }
 }
 
 /// Recent picks, for cooldowns. Without a state folder, it's empty and

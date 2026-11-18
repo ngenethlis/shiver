@@ -8,6 +8,7 @@ use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 
 use crate::chorus::Chorus;
+use crate::context::{self, Context};
 use crate::pack::{Line, Voice};
 
 /// Which lines may be picked. Empty fields match everything.
@@ -15,8 +16,33 @@ use crate::pack::{Line, Voice};
 pub struct Filter {
     /// Only lines from this voice key.
     pub voice: Option<String>,
-    /// Only lines with this tag.
+    /// Only lines with this tag. An explicit context tag is allowed at any time.
     pub tag: Option<String>,
+    /// The time-of-day context: restricts and boosts context-tagged lines.
+    pub context: Context,
+}
+
+impl Filter {
+    /// Whether a line's context tags allow it now: it has none, or one of them
+    /// is active or explicitly asked for.
+    fn context_allows(&self, line: &Line) -> bool {
+        let mut tags = line
+            .tags
+            .iter()
+            .filter(|t| context::is_context_tag(t))
+            .peekable();
+        tags.peek().is_none()
+            || tags.any(|t| self.context.is_active(t) || self.tag.as_ref() == Some(t))
+    }
+
+    /// The line's weight, boosted if it carries an active context tag.
+    fn weight(&self, line: &Line) -> f64 {
+        if line.tags.iter().any(|t| self.context.is_active(t)) {
+            line.weight * context::BOOST
+        } else {
+            line.weight
+        }
+    }
 }
 
 /// A line that was shown before, as recorded in the history.
@@ -68,6 +94,7 @@ impl Chorus {
             .iter()
             .filter(|l| filter.voice.as_ref().is_none_or(|v| &l.voice == v))
             .filter(|l| filter.tag.as_ref().is_none_or(|t| l.tags.contains(t)))
+            .filter(|l| filter.context_allows(l))
             .collect();
         if candidates.is_empty() {
             return None;
@@ -99,7 +126,7 @@ impl Chorus {
 
         // Weights are validated at load time (finite, > 0) and the pool isn't
         // empty, so this can't fail.
-        let index = WeightedIndex::new(pool.iter().map(|l| l.weight)).ok()?;
+        let index = WeightedIndex::new(pool.iter().map(|l| filter.weight(l))).ok()?;
         let line = pool[index.sample(rng)];
         let voice = self.voices.get(&line.voice)?.clone();
 
@@ -121,16 +148,16 @@ mod tests {
     use super::*;
     use crate::test_util::Packs;
 
-    /// Two voices; `drift` has two lines (one tagged `late`), `ember` has one.
+    /// Two voices; `drift` has two lines (one tagged `dusk`), `ember` has one.
     fn sample_chorus() -> (Packs, Chorus) {
         let packs = Packs::new();
         packs.add(
             "p",
             "[voices.drift]\ndisplay = \"DRIFT\"\ncolor = \"#336699\"\n\
              [voices.ember]\n\
-             [[lines]]\nvoice = \"drift\"\ntext = \"Lights off soon.\"\ntags = [\"late\"]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"Lights off soon.\"\ntags = [\"dusk\"]\n\
              [[lines]]\nvoice = \"drift\"\ntext = \"Look out the window.\"\ntags = [\"idle\"]\n\
-             [[lines]]\nvoice = \"ember\"\ntext = \"Still awake?\"\ntags = [\"late\"]\n",
+             [[lines]]\nvoice = \"ember\"\ntext = \"Still awake?\"\ntags = [\"dusk\"]\n",
         );
         let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
@@ -141,6 +168,7 @@ mod tests {
         Filter {
             voice: voice.map(Into::into),
             tag: tag.map(Into::into),
+            context: Context::none(),
         }
     }
 
@@ -169,7 +197,7 @@ mod tests {
     fn filters_by_tag() {
         let (_p, chorus) = sample_chorus();
         assert_eq!(
-            texts(&chorus, &filter(None, Some("late"))),
+            texts(&chorus, &filter(None, Some("dusk"))),
             ["Lights off soon.", "Still awake?"]
         );
     }
@@ -178,7 +206,7 @@ mod tests {
     fn filters_by_voice_and_tag() {
         let (_p, chorus) = sample_chorus();
         assert_eq!(
-            texts(&chorus, &filter(Some("drift"), Some("late"))),
+            texts(&chorus, &filter(Some("drift"), Some("dusk"))),
             ["Lights off soon."]
         );
     }
@@ -219,7 +247,7 @@ mod tests {
         let (_p, chorus) = sample_chorus();
         let mut rng = StdRng::seed_from_u64(3);
         let i = chorus
-            .pick(&filter(Some("drift"), Some("late")), &mut rng)
+            .pick(&filter(Some("drift"), Some("dusk")), &mut rng)
             .unwrap();
         assert_eq!(i.voice.key, "drift");
         assert_eq!(i.voice.display, "DRIFT");
@@ -355,7 +383,7 @@ mod tests {
         let (_p, chorus) = two_voices(10);
         let filter = Filter {
             voice: Some("ember".into()),
-            tag: None,
+            ..Filter::default()
         };
         let (picks, _) = run(&chorus, &filter, 3, 8);
         assert!(picks.iter().all(|i| i.voice.key == "ember"));
@@ -388,6 +416,69 @@ mod tests {
             .count();
         let share = common as f64 / 10_000.0;
         assert!((0.85..=0.95).contains(&share), "common share was {share}");
+    }
+
+    /// One `late`, one `morning` and one untagged line, all weight 1.
+    fn timed() -> (Packs, Chorus) {
+        let packs = Packs::new();
+        packs.add(
+            "p",
+            "[voices.drift]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"night\"\ntags = [\"late\"]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"dawn\"\ntags = [\"morning\", \"focus\"]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"any\"\n",
+        );
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        (packs, chorus)
+    }
+
+    fn at(hours: u32, tag: Option<&str>) -> Filter {
+        Filter {
+            tag: tag.map(Into::into),
+            context: Context::at(hours * 60),
+            ..Filter::default()
+        }
+    }
+
+    #[test]
+    fn context_tags_restrict() {
+        let (_p, chorus) = timed();
+        assert_eq!(texts(&chorus, &at(12, None)), ["any"]);
+        assert_eq!(texts(&chorus, &at(23, None)), ["any", "night"]);
+        assert_eq!(texts(&chorus, &at(7, None)), ["any", "dawn"]);
+        // A non-context tag doesn't lift the time restriction.
+        assert!(texts(&chorus, &at(12, Some("focus"))).is_empty());
+    }
+
+    #[test]
+    fn explicit_tag_overrides_context() {
+        let (_p, chorus) = timed();
+        assert_eq!(texts(&chorus, &at(12, Some("late"))), ["night"]);
+        assert_eq!(texts(&chorus, &at(23, Some("morning"))), ["dawn"]);
+    }
+
+    #[test]
+    fn no_context_means_no_context_lines() {
+        let (_p, chorus) = timed();
+        assert_eq!(texts(&chorus, &Filter::default()), ["any"]);
+        let late = Filter {
+            tag: Some("late".into()),
+            ..Filter::default()
+        };
+        assert_eq!(texts(&chorus, &late), ["night"]);
+    }
+
+    #[test]
+    fn active_context_boosts() {
+        let (_p, chorus) = timed();
+        let mut rng = StdRng::seed_from_u64(8);
+        let filter = at(23, None);
+        let night = (0..10_000)
+            .filter(|_| chorus.pick(&filter, &mut rng).unwrap().text == "night")
+            .count();
+        let share = night as f64 / 10_000.0;
+        assert!((0.70..=0.80).contains(&share), "night share was {share}");
     }
 
     #[test]

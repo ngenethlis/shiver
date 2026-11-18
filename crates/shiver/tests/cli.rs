@@ -717,3 +717,33 @@ fn corrupt_history_only_warns() {
         stderr(&out)
     );
 }
+
+#[test]
+fn say_at_uses_context() {
+    let packs = Packs::new();
+    packs.add(
+        "p",
+        "[voices.v]\n\
+         [[lines]]\nvoice = \"v\"\ntext = \"night line\"\ntags = [\"late\"]\n\
+         [[lines]]\nvoice = \"v\"\ntext = \"dawn line\"\ntags = [\"morning\"]\n",
+    );
+    for seed in 0..10 {
+        let seed = seed.to_string();
+        let night = packs.run(&["say", "--at", "23:30", "--seed", &seed]);
+        assert!(stdout(&night).contains("night line"), "{}", stderr(&night));
+        let dawn = packs.run(&["say", "--at", "07:00", "--seed", &seed]);
+        assert!(stdout(&dawn).contains("dawn line"), "{}", stderr(&dawn));
+    }
+    let noon = packs.run(&["say", "--at", "12:00"]);
+    assert_eq!(noon.status.code(), Some(1));
+    assert_eq!(stderr(&noon), "shiver: no matching lines\n");
+}
+
+#[test]
+fn say_at_rejects_bad_time() {
+    let packs = Packs::new();
+    for bad in ["24:00", "7:00", "12:60", "noon"] {
+        let out = packs.run(&["say", "--at", bad]);
+        assert_eq!(out.status.code(), Some(2), "{bad}");
+    }
+}

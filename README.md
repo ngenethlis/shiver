@@ -33,6 +33,8 @@ generic: every voice, line and sound comes from packs that you write.
   sound with PipeWire or PulseAudio.
 - **Weighted picks:** make lines rarer or more common, and narrow the pick by
   voice or tag.
+- **Knows the time:** `morning` lines only come in the morning, `late` lines
+  only at night.
 - **No repeats:** a line doesn't come back until the others have had a turn,
   and voices take turns.
 - **Forgiving:** a broken pack or line is skipped with a warning; everything
@@ -108,6 +110,12 @@ in another. If two packs define the same voice, the first (by folder name) wins.
 
 Run `shiver list` to see what's loaded. Problems are printed as warnings.
 
+Two tags follow the clock. A line tagged `morning` is only picked between 05:00
+and 11:00, and one tagged `late` only between 22:00 and 05:00; during those
+hours they're also three times as likely. Asking for one with `--tag late`
+works at any time, and `--at 23:30` on `say` or `notify` previews another time
+of day. Other tags have no time limits.
+
 shiver remembers its last 50 picks in `~/.local/state/shiver/history`. A line
 isn't repeated until every other matching line has been shown, and the same
 voice doesn't speak twice in a row when another voice has something to say
@@ -117,8 +125,8 @@ voice doesn't speak twice in a row when another voice has something to say
 
 | Command | What it does |
 |---|---|
-| `shiver say [--voice V] [--tag T]` | Print a random line in the terminal |
-| `shiver notify [--voice V] [--tag T] [--no-sound]` | Show a random line as a notification, with sound |
+| `shiver say [--voice V] [--tag T] [--at HH:MM]` | Print a random line in the terminal |
+| `shiver notify [--voice V] [--tag T] [--at HH:MM] [--no-sound]` | Show a random line as a notification, with sound |
 | `shiver notify --voice V --text "..." [--sound FILE]` | Show a one-off message |
 | `shiver list` | List packs, voices and line counts |
 | `shiver init [--force]` | Install the default pack |
