@@ -707,8 +707,10 @@ dependencies = [
  "jiff",
  "notify-rust",
  "rand",
+ "serde",
  "shiver-core",
  "tempfile",
+ "toml",
  "unicode-width",
 ]
 

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0011: Config file</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0011</span>: Config file</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p>Several earlier specs fixed a value and said “configurable later”: the time
+windows for <code>morning</code> and <code>late</code>, the history size, the
+hook's ignore list. Some things can't be changed at all today, like turning
+sound or a pack off, or the volume.</p>
+
+<h2>Proposal</h2>
+<p>An optional <code>~/.config/shiver/config.toml</code>. Every setting has a
+default, so an empty or missing file changes nothing.</p>
+<pre><code>packs_dir = "~/shiver-packs"        # where packs live
+disabled_packs = ["work"]             # pack folders to skip
+
+[sound]
+enabled = true
+volume = 0.6                          # 0.0 to 1.0
+
+[notify]
+default_icon = true                   # Signal Flame for voices without an icon
+
+[cooldowns]
+enabled = true
+history = 50                          # picks remembered
+
+[context]
+morning = "06:00-10:30"
+late = "23:00-04:00"
+boost = 3.0
+
+[hook]
+min_gap = "10m"
+ignore_commands = ["make"]            # added to the built-in list</code></pre>
+<ul>
+  <li><code>shiver config</code> prints where the file is and every setting in
+    effect, as TOML you can copy into the file.</li>
+  <li>Flags and environment variables still win: <code>--packs-dir</code> and
+    <code>SHIVER_PACKS_DIR</code> beat <code>packs_dir</code>, and
+    <code>--min-gap</code> beats <code>hook.min_gap</code>.</li>
+  <li>A mistake in the file (bad syntax, an unknown key, a bad value) is an
+    error naming the line, not silently ignored, so typos get noticed.</li>
+</ul>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out (later)</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>The settings above</li>
+        <li><code>shiver config</code></li>
+        <li><code>--config FILE</code> and <code>SHIVER_CONFIG</code></li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Timer schedule in the file (it lives in the timer unit)</li>
+        <li>Per-voice settings</li>
+        <li>Reloading while running (no daemon yet)</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Unknown keys are errors.</td>
+      <td>A misspelt setting that's silently ignored is worse than a clear message.</td></tr>
+  <tr><td><code>disabled_packs</code> rather than a list of enabled packs.</td>
+      <td>New packs work as soon as they're dropped in; you only list exceptions.</td></tr>
+  <tr><td><code>ignore_commands</code> adds to the built-in list.</td>
+      <td>Nobody has to copy the defaults to add one command.</td></tr>
+  <tr><td>Volume is passed to <code>pw-play --volume</code> / <code>paplay --volume</code>.</td>
+      <td>Both players support it; no audio code in shiver.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Tests cover parsing, defaults, errors, precedence, and each setting's effect.</li>
+  <li>All CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

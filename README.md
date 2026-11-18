@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
-[Features](#features) – [Installation](#installation) – [Quick Start](#quick-start) – [Packs](#packs) – [Commands](#commands) – [Random Popups](#random-popups) – [Shell Hook](#shell-hook) – [Roadmap](#roadmap) – [Development](#development) – [License](#license)
+[Features](#features) – [Installation](#installation) – [Quick Start](#quick-start) – [Packs](#packs) – [Commands](#commands) – [Random Popups](#random-popups) – [Shell Hook](#shell-hook) – [Configuration](#configuration) – [Roadmap](#roadmap) – [Development](#development) – [License](#license)
 
 </div>
 
@@ -132,8 +132,10 @@ voice doesn't speak twice in a row when another voice has something to say
 | `shiver init [--force]` | Install the default pack |
 | `shiver timer enable \| disable \| status` | Random popups through the day ([below](#random-popups)) |
 | `shiver hook zsh\|bash [--min-gap D] [--no-sound]` | Print the shell hook ([below](#shell-hook)) |
+| `shiver config` | Show the config file's location and every setting in effect |
 
-Use another packs folder with `--packs-dir DIR` or `SHIVER_PACKS_DIR`.
+Use another packs folder with `--packs-dir DIR` or `SHIVER_PACKS_DIR`, and
+another config file with `--config FILE` or `SHIVER_CONFIG`.
 Colour is turned off when output isn't a terminal, or with `NO_COLOR=1`.
 
 ## Random Popups
@@ -213,6 +215,42 @@ would notify: CLOCKWORK: Read the whole log, not just the last line.
 In bash, the hook reads the shell history to see which command ran, so
 commands kept out of the history (`HISTCONTROL=ignorespace`, or repeats with
 `ignoredups`) don't trigger it.
+
+## Configuration
+
+Everything works without a config file. To change the defaults, create
+`~/.config/shiver/config.toml` with any of these (shown with their defaults):
+
+```toml
+packs_dir = "~/.config/shiver/packs"
+disabled_packs = []              # pack folders to skip, e.g. ["work"]
+
+[sound]
+enabled = true
+volume = 1.0                     # 0.0 to 1.0
+
+[notify]
+default_icon = true              # Signal Flame for voices without an icon
+
+[cooldowns]
+enabled = true
+history = 50                     # picks remembered for "no repeats"
+
+[context]
+morning = "05:00-11:00"
+late = "22:00-05:00"             # may cross midnight
+boost = 3.0                      # how much likelier in-time lines are
+
+[hook]
+min_gap = "10m"
+ignore_commands = []             # added to grep, diff, test, ...
+```
+
+`shiver config` prints the file's location and every setting in effect, in
+this format. A typo or a bad value is an error that names the setting, so
+mistakes don't go unnoticed. Command-line options win over the file:
+`--packs-dir` and `SHIVER_PACKS_DIR` over `packs_dir`, `--no-sound` over
+`sound.enabled`, and `--min-gap` over `hook.min_gap`.
 
 ## Roadmap
 

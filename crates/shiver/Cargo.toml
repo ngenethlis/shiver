@@ -13,7 +13,9 @@ dirs = "7.0.0"
 jiff = "1.0.1"
 notify-rust = "4.19.0"
 rand = "0.10.4"
+serde = { version = "1.0.229", features = ["derive"] }
 shiver-core = { version = "0.1.0", path = "../shiver-core" }
+toml = "1.2.1"
 unicode-width = "0.2.3"
 
 [dev-dependencies]

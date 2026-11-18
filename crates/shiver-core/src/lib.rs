@@ -13,6 +13,6 @@ mod select;
 mod test_util;
 
 pub use chorus::{Chorus, LoadError, PackSummary, Warning};
-pub use context::{Context, is_context_tag};
+pub use context::{Context, ContextRules, is_context_tag};
 pub use pack::{Line, Voice, line_id};
 pub use select::{Filter, Interjection, Seen};

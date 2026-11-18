@@ -1,6 +1,7 @@
 //! The `shiver` command: show a line from a voice in the terminal or as a
 //! desktop notification.
 
+mod config;
 mod history;
 mod hook;
 mod icon;
@@ -28,6 +29,10 @@ struct Cli {
     /// Folder containing packs [env: SHIVER_PACKS_DIR] [default: ~/.config/shiver/packs]
     #[arg(long, global = true, value_name = "DIR")]
     packs_dir: Option<PathBuf>,
+
+    /// Config file [env: SHIVER_CONFIG] [default: ~/.config/shiver/config.toml]
+    #[arg(long, global = true, value_name = "FILE")]
+    config: Option<PathBuf>,
 
     /// Seed for the random pick (for tests).
     #[arg(long, global = true, hide = true)]
@@ -62,6 +67,8 @@ enum Command {
     Hook(HookArgs),
     /// Called by the shell hook after a failed command; may show a `fail` line.
     OnFail(OnFailArgs),
+    /// Show the config file's location and every setting in effect.
+    Config,
 }
 
 #[derive(Args)]
@@ -84,9 +91,9 @@ struct OnFailArgs {
     /// The command line that failed.
     #[arg(long, allow_hyphen_values = true)]
     command: Option<String>,
-    /// At most one popup per this long.
-    #[arg(long, default_value = "10m", value_parser = timer::parse_duration)]
-    min_gap: u32,
+    /// At most one popup per this long [default: hook.min_gap, or 10m].
+    #[arg(long, value_parser = timer::parse_duration)]
+    min_gap: Option<u32>,
     /// Don't play a sound.
     #[arg(long)]
     no_sound: bool,
@@ -170,16 +177,31 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> anyhow::Result<()> {
-    // An empty SHIVER_PACKS_DIR counts as unset.
+    let (config_path, explicit_config) = config::locate(cli.config)?;
+    let (cfg, config_exists) = config::load(&config_path, explicit_config)?;
+
+    // --packs-dir, then SHIVER_PACKS_DIR (empty counts as unset), then the
+    // config file, then the default.
     let env_dir = std::env::var_os("SHIVER_PACKS_DIR").filter(|v| !v.is_empty());
     let explicit_dir = cli.packs_dir.or(env_dir.map(PathBuf::from));
-    let dir = match explicit_dir.clone() {
+    let dir = match explicit_dir.clone().or(cfg.packs_dir.clone()) {
         Some(dir) => dir,
         None => dirs::config_dir()
             .context("can't find the config folder; use --packs-dir")?
             .join("shiver")
             .join("packs"),
     };
+
+    if let Command::Config = cli.command {
+        let state = if config_exists {
+            "exists"
+        } else {
+            "not found; using defaults"
+        };
+        println!("# {} ({state})", config_path.display());
+        print!("{}", cfg.to_toml(&dir));
+        return Ok(());
+    }
 
     // `init` runs before loading, so broken packs can't stop it.
     if let Command::Init { force } = cli.command {
@@ -204,11 +226,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             );
             return Ok(());
         }
-        Command::OnFail(args) => return on_fail(&args, &dir),
+        Command::OnFail(args) => return on_fail(&args, &dir, &cfg),
         command => command,
     };
 
-    let (chorus, warnings) = Chorus::load(&dir)?;
+    let (chorus, warnings) = Chorus::load_skipping(&dir, &cfg.disabled_packs)?;
     for warning in &warnings {
         output::warn(warning);
     }
@@ -222,9 +244,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let filter = Filter {
                 voice: args.voice,
                 tag: args.tag,
-                context: context(args.at),
+                context: context(args.at, &cfg),
             };
-            let recent = Recent::load();
+            let recent = Recent::load(&cfg);
             let line = pick(&chorus, &dir, &filter, &recent, &mut rng)?;
             stdout::Stdout::detect().emit(&line)?;
             recent.record(&line);
@@ -241,19 +263,22 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                     let filter = Filter {
                         voice: args.voice,
                         tag: args.tag,
-                        context: context(args.at),
+                        context: context(args.at, &cfg),
                     };
-                    let recent = Recent::load();
+                    let recent = Recent::load(&cfg);
                     let line = pick(&chorus, &dir, &filter, &recent, &mut rng)?;
                     (line, Some(recent))
                 }
             };
-            notify::Notify.emit(&line)?;
+            notify::Notify {
+                default_icon: cfg.default_icon,
+            }
+            .emit(&line)?;
             if let Some(recent) = recent {
                 recent.record(&line);
             }
-            if !args.no_sound {
-                sound::Sound.emit(&line)?;
+            if !args.no_sound && cfg.sound_enabled {
+                sound::Sound { volume: cfg.volume }.emit(&line)?;
             }
             Ok(())
         }
@@ -261,7 +286,11 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             print!("{}", list(&chorus, &dir));
             Ok(())
         }
-        Command::Init { .. } | Command::Timer { .. } | Command::Hook(_) | Command::OnFail(_) => {
+        Command::Init { .. }
+        | Command::Timer { .. }
+        | Command::Hook(_)
+        | Command::OnFail(_)
+        | Command::Config => {
             unreachable!("handled before loading the chorus")
         }
     }
@@ -304,7 +333,7 @@ fn run_timer(action: TimerAction, packs_dir: Option<&Path>) -> anyhow::Result<()
 }
 
 /// `shiver on-fail`: maybe show a `fail` line. Quiet unless `--dry-run`.
-fn on_fail(args: &OnFailArgs, dir: &Path) -> anyhow::Result<()> {
+fn on_fail(args: &OnFailArgs, dir: &Path, cfg: &config::Config) -> anyhow::Result<()> {
     let say = |msg: String| {
         if args.dry_run {
             println!("{msg}");
@@ -318,25 +347,26 @@ fn on_fail(args: &OnFailArgs, dir: &Path) -> anyhow::Result<()> {
     if let Some(reason) = hook::skip_reason(
         args.exit_code,
         args.command.as_deref(),
+        &cfg.ignore_commands,
         last,
         now,
-        args.min_gap,
+        args.min_gap.unwrap_or(cfg.min_gap),
     ) {
         say(format!("skip: {reason}"));
         return Ok(());
     }
 
     // Pack warnings are left to `say` and `list`; the hook stays quiet.
-    let Ok((chorus, _warnings)) = Chorus::load(dir) else {
+    let Ok((chorus, _warnings)) = Chorus::load_skipping(dir, &cfg.disabled_packs) else {
         say("skip: no fail lines".into());
         return Ok(());
     };
     let filter = Filter {
         voice: None,
         tag: Some("fail".into()),
-        context: context(None),
+        context: context(None, cfg),
     };
-    let recent = Recent::load();
+    let recent = Recent::load(cfg);
     let Some(line) = chorus.pick_with_history(
         &filter,
         &history::seen(&recent.entries),
@@ -353,13 +383,16 @@ fn on_fail(args: &OnFailArgs, dir: &Path) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    notify::Notify.emit(&line)?;
+    notify::Notify {
+        default_icon: cfg.default_icon,
+    }
+    .emit(&line)?;
     recent.record(&line);
     if let Some(path) = &last_path {
         hook::write_last_fail(path, now);
     }
-    if !args.no_sound {
-        sound::Sound.emit(&line)?;
+    if !args.no_sound && cfg.sound_enabled {
+        sound::Sound { volume: cfg.volume }.emit(&line)?;
     }
     Ok(())
 }
@@ -380,16 +413,16 @@ fn parse_clock(s: &str) -> Result<u32, String> {
 }
 
 /// The time-of-day context: `--at` if given, else the local time.
-fn context(at: Option<u32>) -> shiver_core::Context {
+fn context(at: Option<u32>, cfg: &config::Config) -> shiver_core::Context {
     if let Some(minutes) = at {
-        return shiver_core::Context::at(minutes);
+        return cfg.context.at(minutes);
     }
     match jiff::tz::TimeZone::try_system() {
         Ok(tz) => {
             let now = jiff::Timestamp::now().to_zoned_datetime(tz);
             let minutes = u32::try_from(now.hour()).unwrap_or(0) * 60
                 + u32::try_from(now.minute()).unwrap_or(0);
-            shiver_core::Context::at(minutes)
+            cfg.context.at(minutes)
         }
         Err(e) => {
             output::warn(format!("can't read the local time: {e}"));
@@ -403,18 +436,24 @@ fn context(at: Option<u32>) -> shiver_core::Context {
 struct Recent {
     path: Option<PathBuf>,
     entries: Vec<history::Entry>,
+    keep: usize,
 }
 
 impl Recent {
-    fn load() -> Self {
-        let path = history::path();
+    /// Loads the history, unless cooldowns are turned off in the config.
+    fn load(cfg: &config::Config) -> Self {
+        let path = cfg.cooldowns.then(history::path).flatten();
         let entries = path.as_deref().map(history::load).unwrap_or_default();
-        Recent { path, entries }
+        Recent {
+            path,
+            entries,
+            keep: cfg.history,
+        }
     }
 
     fn record(self, line: &Interjection) {
         if let Some(path) = &self.path {
-            history::record(path, self.entries, line);
+            history::record(path, self.entries, line, self.keep);
         }
     }
 }

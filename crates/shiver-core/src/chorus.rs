@@ -69,8 +69,13 @@ impl Chorus {
     /// Packs load in folder-name order. Anything broken is skipped and reported
     /// in the returned warnings. A missing `dir` gives an empty chorus.
     pub fn load(dir: &Path) -> Result<(Chorus, Vec<Warning>), LoadError> {
+        Chorus::load_skipping(dir, &[])
+    }
+
+    /// Like [`Chorus::load`], but skips the pack folders named in `skip`.
+    pub fn load_skipping(dir: &Path, skip: &[String]) -> Result<(Chorus, Vec<Warning>), LoadError> {
         let mut warnings = Vec::new();
-        let loaded = read_packs(dir, &mut warnings)?;
+        let loaded = read_packs(dir, skip, &mut warnings)?;
 
         let mut chorus = Chorus::default();
         let mut summaries: Vec<PackSummary> = loaded
@@ -135,7 +140,11 @@ impl Chorus {
 }
 
 /// Reads and parses each pack folder in `dir`, in folder-name order.
-fn read_packs(dir: &Path, warnings: &mut Vec<Warning>) -> Result<Vec<Loaded>, LoadError> {
+fn read_packs(
+    dir: &Path,
+    skip: &[String],
+    warnings: &mut Vec<Warning>,
+) -> Result<Vec<Loaded>, LoadError> {
     let read_err = |source| LoadError::ReadDir {
         path: dir.to_path_buf(),
         source,
@@ -149,7 +158,10 @@ fn read_packs(dir: &Path, warnings: &mut Vec<Warning>) -> Result<Vec<Loaded>, Lo
     let mut folders = Vec::new();
     for entry in entries {
         let path = entry.map_err(read_err)?.path();
-        if path.is_dir() {
+        let skipped = path
+            .file_name()
+            .is_some_and(|n| skip.iter().any(|s| n == s.as_str()));
+        if path.is_dir() && !skipped {
             folders.push(path);
         }
     }
@@ -301,6 +313,17 @@ mod tests {
         assert_eq!(names, ["a-first", "b-second"]);
         let texts: Vec<_> = chorus.lines().iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts, ["A", "B"]);
+    }
+
+    #[test]
+    fn skips_disabled_folders() {
+        let packs = Packs::new();
+        packs.add("keep", VOICE);
+        packs.add("work", VOICE);
+        let (chorus, warnings) = Chorus::load_skipping(packs.dir(), &["work".to_owned()]).unwrap();
+        let names: Vec<_> = chorus.packs().iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["keep"]);
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     #[test]

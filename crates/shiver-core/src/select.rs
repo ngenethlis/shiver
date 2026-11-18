@@ -38,7 +38,7 @@ impl Filter {
     /// The line's weight, boosted if it carries an active context tag.
     fn weight(&self, line: &Line) -> f64 {
         if line.tags.iter().any(|t| self.context.is_active(t)) {
-            line.weight * context::BOOST
+            line.weight * self.context.boost
         } else {
             line.weight
         }
@@ -467,6 +467,26 @@ mod tests {
             ..Filter::default()
         };
         assert_eq!(texts(&chorus, &late), ["night"]);
+    }
+
+    #[test]
+    fn custom_boost() {
+        let (_p, chorus) = timed();
+        let rules = crate::ContextRules {
+            boost: 9.0,
+            ..Default::default()
+        };
+        let filter = Filter {
+            context: rules.at(23 * 60),
+            ..Filter::default()
+        };
+        let mut rng = StdRng::seed_from_u64(8);
+        let night = (0..10_000)
+            .filter(|_| chorus.pick(&filter, &mut rng).unwrap().text == "night")
+            .count();
+        let share = night as f64 / 10_000.0;
+        // 9 : 1 → 90%.
+        assert!((0.86..=0.94).contains(&share), "night share was {share}");
     }
 
     #[test]

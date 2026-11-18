@@ -11,9 +11,6 @@ use shiver_core::{Interjection, Seen};
 
 use crate::output;
 
-/// How many recent picks are kept.
-pub const KEEP: usize = 50;
-
 /// One recorded pick.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
@@ -77,19 +74,19 @@ pub fn load(path: &Path) -> Vec<Entry> {
     entries
 }
 
-/// Writes the last [`KEEP`] entries, via a temporary file and a rename.
-fn save(path: &Path, entries: &[Entry]) -> io::Result<()> {
+/// Writes the last `keep` entries, via a temporary file and a rename.
+fn save(path: &Path, entries: &[Entry], keep: usize) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let start = entries.len().saturating_sub(KEEP);
+    let start = entries.len().saturating_sub(keep);
     let tmp = path.with_extension("tmp");
     std::fs::write(&tmp, render(&entries[start..]))?;
     std::fs::rename(&tmp, path)
 }
 
-/// Appends a pick and saves. Failure is a warning, never an error.
-pub fn record(path: &Path, mut entries: Vec<Entry>, picked: &Interjection) {
+/// Appends a pick and saves the last `keep`. Failure is a warning, never an error.
+pub fn record(path: &Path, mut entries: Vec<Entry>, picked: &Interjection, keep: usize) {
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -100,7 +97,7 @@ pub fn record(path: &Path, mut entries: Vec<Entry>, picked: &Interjection) {
             voice: picked.voice.key.clone(),
         },
     });
-    if let Err(e) = save(path, &entries) {
+    if let Err(e) = save(path, &entries, keep) {
         output::warn(format!("can't save history {}: {e}", path.display()));
     }
 }
@@ -137,9 +134,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state/shiver/history");
         let entries: Vec<_> = (0..60).map(entry).collect();
-        save(&path, &entries).unwrap();
+        save(&path, &entries, 50).unwrap();
         let loaded = load(&path);
-        assert_eq!(loaded.len(), KEEP);
+        assert_eq!(loaded.len(), 50);
         assert_eq!(loaded[0], entry(10));
         assert_eq!(loaded[49], entry(59));
         assert!(!path.with_extension("tmp").exists());
@@ -179,7 +176,7 @@ mod tests {
             sound: None,
             icon: None,
         };
-        record(&path, vec![entry(1)], &picked);
+        record(&path, vec![entry(1)], &picked, 50);
         let loaded = load(&path);
         assert_eq!(loaded.len(), 2);
         assert_eq!(

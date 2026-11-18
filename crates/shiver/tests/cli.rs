@@ -62,7 +62,10 @@ fn shared_state() -> &'static Path {
 fn shiver() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_shiver"));
     cmd.env_remove("SHIVER_PACKS_DIR")
+        .env_remove("SHIVER_CONFIG")
         .env_remove("NO_COLOR")
+        // No real config file: the default lives under a temp folder.
+        .env("XDG_CONFIG_HOME", shared_state().join("config"))
         .env("XDG_STATE_HOME", shared_state())
         .env("XDG_DATA_HOME", shared_state().join("data"))
         // Never reach the real desktop: any notification attempt fails.
@@ -954,4 +957,233 @@ fn on_fail_reports_unreachable_notification_server() {
     assert_eq!(out.status.code(), Some(1));
     assert!(stderr(&out).contains("couldn't send the notification"));
     assert!(!packs.state().join("shiver/last-fail").exists());
+}
+
+impl Packs {
+    /// Writes a config file next to the packs and returns its path.
+    fn config(&self, text: &str) -> std::path::PathBuf {
+        let path = self.root.path().join("config.toml");
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    /// Runs with `--config <file>` (and the packs folder).
+    fn run_with_config(&self, config: &str, args: &[&str]) -> Output {
+        let path = self.config(config);
+        let mut all = vec!["--config", path.to_str().unwrap()];
+        all.extend_from_slice(args);
+        self.run(&all)
+    }
+}
+
+#[test]
+fn config_errors_name_the_file() {
+    let packs = Packs::new();
+    packs.add("p", ONE_LINE);
+    let out = packs.run_with_config("[sound]\nvolum = 0.5\n", &["say"]);
+    assert_eq!(out.status.code(), Some(1));
+    let err = stderr(&out);
+    let path = packs.root.path().join("config.toml");
+    assert!(
+        err.starts_with(&format!("shiver: invalid config {}: ", path.display())),
+        "{err}"
+    );
+    assert!(err.contains("volum"), "{err}");
+}
+
+#[test]
+fn missing_explicit_config_is_an_error() {
+    let packs = Packs::new();
+    let out = packs.run(&["--config", "/nonexistent/shiver.toml", "list"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("can't read config /nonexistent/shiver.toml"));
+
+    let out = shiver()
+        .env("SHIVER_CONFIG", "/nonexistent/env.toml")
+        .arg("list")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn config_packs_dir_and_precedence() {
+    let from_config = Packs::new();
+    from_config.add(
+        "p",
+        "[voices.v]\n[[lines]]\nvoice = \"v\"\ntext = \"from config\"\n",
+    );
+    let from_env = Packs::new();
+    from_env.add(
+        "p",
+        "[voices.v]\n[[lines]]\nvoice = \"v\"\ntext = \"from env\"\n",
+    );
+    let config = from_config.config(&format!("packs_dir = {:?}\n", from_config.dir()));
+
+    let out = shiver()
+        .arg("--config")
+        .arg(&config)
+        .arg("say")
+        .output()
+        .unwrap();
+    assert!(stdout(&out).contains("from config"), "{}", stderr(&out));
+
+    let out = shiver()
+        .env("SHIVER_PACKS_DIR", from_env.dir())
+        .arg("--config")
+        .arg(&config)
+        .arg("say")
+        .output()
+        .unwrap();
+    assert!(stdout(&out).contains("from env"), "{}", stderr(&out));
+}
+
+#[test]
+fn config_hook_min_gap() {
+    let packs = Packs::new();
+    packs.add("p", FAIL_PACK);
+    let last = packs.state().join("shiver/last-fail");
+    std::fs::create_dir_all(last.parent().unwrap()).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    std::fs::write(&last, format!("{}\n", now - 180)).unwrap();
+    let dry = ["on-fail", "--dry-run", "--exit-code", "1"];
+
+    let out = packs.run_with_config("", &dry);
+    assert!(
+        stdout(&out).starts_with("skip: last popup"),
+        "{}",
+        stdout(&out)
+    );
+    let out = packs.run_with_config("[hook]\nmin_gap = \"1m\"\n", &dry);
+    assert!(stdout(&out).starts_with("would notify"), "{}", stdout(&out));
+    // The flag beats the config.
+    let mut flag = dry.to_vec();
+    flag.extend(["--min-gap", "1h"]);
+    let out = packs.run_with_config("[hook]\nmin_gap = \"1m\"\n", &flag);
+    assert!(
+        stdout(&out).starts_with("skip: last popup"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn config_disabled_packs() {
+    let packs = Packs::new();
+    packs.add("a", ONE_LINE);
+    packs.add(
+        "work",
+        "[voices.w]\n[[lines]]\nvoice = \"w\"\ntext = \"work line\"\n",
+    );
+    let config = "disabled_packs = [\"work\"]\n";
+    let out = packs.run_with_config(config, &["list"]);
+    assert!(stdout(&out).starts_with("a ("), "{}", stdout(&out));
+    assert!(!stdout(&out).contains("work"));
+    for seed in 0..5 {
+        let out = packs.run_with_config(config, &["say", "--seed", &seed.to_string()]);
+        assert!(!stdout(&out).contains("work line"));
+    }
+}
+
+#[test]
+fn config_cooldowns_off() {
+    let packs = Packs::new();
+    packs.add("p", ONE_LINE);
+    let out = packs.run_with_config("[cooldowns]\nenabled = false\n", &["say"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(!packs.state().join("shiver/history").exists());
+}
+
+#[test]
+fn config_history_size() {
+    let packs = Packs::new();
+    packs.add("p", SEVERAL);
+    for _ in 0..4 {
+        let out = packs.run_with_config("[cooldowns]\nhistory = 2\n", &["say"]);
+        assert!(out.status.success(), "{}", stderr(&out));
+    }
+    let history = std::fs::read_to_string(packs.state().join("shiver/history")).unwrap();
+    assert_eq!(history.lines().count(), 2, "{history}");
+}
+
+#[test]
+fn config_context_windows() {
+    let packs = Packs::new();
+    packs.add(
+        "p",
+        "[voices.v]\n[[lines]]\nvoice = \"v\"\ntext = \"night line\"\ntags = [\"late\"]\n",
+    );
+    let config = "[context]\nlate = \"12:00-13:00\"\n";
+    let out = packs.run_with_config(config, &["say", "--at", "12:30"]);
+    assert!(stdout(&out).contains("night line"), "{}", stderr(&out));
+    let out = packs.run_with_config(config, &["say", "--at", "23:00"]);
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn config_ignore_commands() {
+    let packs = Packs::new();
+    packs.add("p", FAIL_PACK);
+    let dry = [
+        "on-fail",
+        "--dry-run",
+        "--exit-code",
+        "2",
+        "--command",
+        "make all",
+    ];
+    let out = packs.run_with_config("[hook]\nignore_commands = [\"make\"]\n", &dry);
+    assert_eq!(stdout(&out), "skip: ignored command make\n");
+    // The built-in list still applies.
+    let out = packs.run_with_config(
+        "[hook]\nignore_commands = [\"make\"]\n",
+        &[
+            "on-fail",
+            "--dry-run",
+            "--exit-code",
+            "1",
+            "--command",
+            "grep x",
+        ],
+    );
+    assert_eq!(stdout(&out), "skip: ignored command grep\n");
+}
+
+#[test]
+fn config_command_prints_effective_settings() {
+    let packs = Packs::new();
+    let path = packs.config(
+        "disabled_packs = [\"old\"]\n[sound]\nvolume = 0.5\n[context]\nlate = \"23:00-04:00\"\n",
+    );
+    let out = packs.run(&["--config", path.to_str().unwrap(), "config"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = stdout(&out);
+    let (first, rest) = text.split_once('\n').unwrap();
+    assert_eq!(first, format!("# {} (exists)", path.display()));
+    assert!(rest.contains("volume = 0.5\n"), "{rest}");
+    assert!(rest.contains("late = \"23:00-04:00\"\n"), "{rest}");
+    assert!(
+        rest.contains(&format!("packs_dir = {:?}\n", packs.dir())),
+        "{rest}"
+    );
+
+    // The printed settings are a valid config that means the same thing.
+    let again = packs.root.path().join("again.toml");
+    std::fs::write(&again, rest).unwrap();
+    let out2 = packs.run(&["--config", again.to_str().unwrap(), "config"]);
+    assert!(out2.status.success(), "{}", stderr(&out2));
+    assert_eq!(stdout(&out2).split_once('\n').unwrap().1, rest);
+
+    // Without a file: defaults.
+    let out = shiver().arg("config").output().unwrap();
+    assert!(
+        stdout(&out)
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with("(not found; using defaults)")
+    );
 }

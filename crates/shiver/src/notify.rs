@@ -8,12 +8,15 @@ use shiver_core::{Chorus, Interjection, Voice, line_id};
 
 use crate::output::Output;
 
-pub struct Notify;
+/// Desktop notifications. `default_icon` turns the Signal Flame fallback on.
+pub struct Notify {
+    pub default_icon: bool,
+}
 
 impl Output for Notify {
     fn emit(&self, interjection: &Interjection) -> anyhow::Result<()> {
         // Only install the default icon when it's needed.
-        let default = if interjection.icon.is_none() {
+        let default = if self.default_icon && interjection.icon.is_none() {
             crate::icon::default_icon()
         } else {
             None
@@ -114,6 +117,18 @@ mod tests {
         let i = one_off(&chorus, "Build Bot", "Tests passed.", None);
         let f = fields(&i, Some(Path::new("/data/shiver/icons/shiver.png")));
         assert_eq!(f.icon.as_deref(), Some("/data/shiver/icons/shiver.png"));
+    }
+
+    #[test]
+    fn default_icon_can_be_off() {
+        // With the setting off, `emit` passes no default to `fields`.
+        let (_dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "Build Bot", "Tests passed.", None);
+        assert_eq!(fields(&i, None).icon, None);
+        let off = Notify {
+            default_icon: false,
+        };
+        assert!(!off.default_icon);
     }
 
     #[test]

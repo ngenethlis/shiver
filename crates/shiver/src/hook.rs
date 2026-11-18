@@ -32,9 +32,11 @@ fn command_name(line: &str) -> Option<&str> {
 }
 
 /// Why `on-fail` didn't fire, if it doesn't.
+/// `also_ignored` adds to the built-in ignored commands.
 pub fn skip_reason(
     code: i32,
     command: Option<&str>,
+    also_ignored: &[String],
     last_fail: Option<u64>,
     now: u64,
     min_gap: u32,
@@ -43,7 +45,7 @@ pub fn skip_reason(
         return Some(format!("ignored exit code {code}"));
     }
     if let Some(name) = command.and_then(command_name)
-        && IGNORED_COMMANDS.contains(&name)
+        && (IGNORED_COMMANDS.contains(&name) || also_ignored.iter().any(|c| c == name))
     {
         return Some(format!("ignored command {name}"));
     }
@@ -161,7 +163,7 @@ mod tests {
     const NOW: u64 = 1_800_000_000;
 
     fn skip(code: i32, cmd: Option<&str>) -> Option<String> {
-        skip_reason(code, cmd, None, NOW, 10)
+        skip_reason(code, cmd, &[], None, NOW, 10)
     }
 
     #[test]
@@ -207,15 +209,15 @@ mod tests {
         let gap = 10;
         let just_before = NOW - 10 * 60 + 1;
         assert_eq!(
-            skip_reason(1, Some("make"), Some(just_before), NOW, gap),
+            skip_reason(1, Some("make"), &[], Some(just_before), NOW, gap),
             Some("last popup 9m ago (min gap 10m)".into())
         );
         assert_eq!(
-            skip_reason(1, Some("make"), Some(NOW - 10 * 60), NOW, gap),
+            skip_reason(1, Some("make"), &[], Some(NOW - 10 * 60), NOW, gap),
             None
         );
         assert_eq!(
-            skip_reason(1, Some("make"), Some(NOW - 3600), NOW, gap),
+            skip_reason(1, Some("make"), &[], Some(NOW - 3600), NOW, gap),
             None
         );
     }
