@@ -38,8 +38,8 @@ Example: `docs/specs/2026/11/0001-pack-loading/`.
 4. **Implement.** Work through `tasks.md` in order and tick off each step as it
    is finished, so another session can pick up where the last one stopped.
 5. **Done.** The spec is done when every acceptance criterion in `spec.md` is
-   checked off and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`
-   and `cargo test` all pass. Then set the status to `done`.
+   checked off and the checks under [Building and checking](#building-and-checking)
+   all pass. Then set the status to `done`.
 
 If the plan has to change during implementation (a requirement is wrong,
 missing or out of scope), stop. Update `spec.md` and `onepager.html`, explain the
@@ -131,6 +131,8 @@ Anything learned during implementation that the next session should know.
   output into its own crate only when it brings heavy dependencies.
 - `docs/design.html`: overall architecture. `docs/specs/`: specs (see above).
   `docs/style.css`: shared stylesheet for the HTML docs.
+- `xtask/`: repository tasks, run with `cargo xtask <task>` (currently
+  `check-specs`).
 
 ## Building and checking
 
@@ -140,10 +142,24 @@ Before saying any change is finished, run:
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+cargo xtask check-specs     # spec folders follow the format above
 ```
 
-All three must pass. Don't silence clippy with `#[allow]` without a comment
+When dependencies or coverage may have changed, also run (needs
+`cargo install cargo-llvm-cov cargo-deny`):
+
+```sh
+cargo llvm-cov --workspace --exclude xtask --summary-only
+cargo deny check
+```
+
+All of these must pass. Don't silence clippy with `#[allow]` without a comment
 saying why.
+
+CI (`.github/workflows/ci.yml`) runs all of the above plus a docs build on every
+push to `main` and every pull request. The coverage job fails if line coverage
+drops below the minimum set in the workflow; raise that minimum when coverage
+goes up, never lower it without asking.
 
 ## Code style
 

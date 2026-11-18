@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0003: Continuous integration</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0003</span>: Continuous integration</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">in-progress</span></p>
+
+<h2>Problem</h2>
+<p>The rules in <code>AGENTS.md</code> (formatting, clippy, tests, the spec
+layout) are only checked when someone remembers to run them. A push or pull
+request can break them without anyone noticing.</p>
+
+<h2>Proposal</h2>
+<p>A GitHub Actions workflow that runs on every push to <code>main</code> and
+every pull request, with seven checks shown separately on GitHub:</p>
+<ul>
+  <li><strong>Format:</strong> <code>cargo fmt --check</code></li>
+  <li><strong>Lint:</strong> <code>cargo clippy --all-targets -- -D warnings</code></li>
+  <li><strong>Test:</strong> <code>cargo test</code></li>
+  <li><strong>Coverage:</strong> <code>cargo llvm-cov</code> measures how much
+    code the tests run. The result shows on the GitHub run page, and the check
+    fails if coverage drops below today's level.</li>
+  <li><strong>Dependencies:</strong> <code>cargo deny check</code> fails if a
+    dependency has a license that doesn't fit <code>MIT OR Apache-2.0</code>, or
+    a known security problem.</li>
+  <li><strong>Docs:</strong> <code>cargo doc</code> with warnings as errors, so
+    broken doc links are caught.</li>
+  <li><strong>Specs:</strong> <code>cargo xtask check-specs</code>, a small Rust
+    tool in the repo that checks every spec folder follows the format in
+    <code>AGENTS.md</code>.</li>
+</ul>
+<p>The spec checker runs the same way locally, so you and agents can check
+specs before pushing.</p>
+
+<h3>What the spec checker checks</h3>
+<ul>
+  <li>Folders are <code>docs/specs/&lt;yyyy&gt;/&lt;mm&gt;/&lt;id&gt;-&lt;name&gt;/</code>,
+    with a 4-digit id and a kebab-case name. Ids are unique.</li>
+  <li><code>spec.md</code> starts with <code>id</code>, <code>name</code>,
+    <code>status</code> and <code>created</code>, and they match the folder
+    (same id, name, year and month).</li>
+  <li>Status is one of draft, approved, in-progress, done, and the one-pager
+    shows the same status.</li>
+  <li><code>onepager.html</code> exists and links the shared stylesheet.</li>
+  <li><code>tasks.md</code> exists once work has started (in-progress or done).</li>
+  <li>Each requirement (<code>### R1: ...</code>) has acceptance criteria.</li>
+  <li>A <code>done</code> spec has no unticked boxes in <code>spec.md</code> or
+    <code>tasks.md</code>.</li>
+</ul>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>The workflow file</li>
+        <li>The <code>xtask</code> spec checker, with tests</li>
+        <li>Mentioning <code>cargo xtask check-specs</code> in <code>AGENTS.md</code></li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Release builds or publishing to crates.io</li>
+        <li>Codecov or other hosted coverage, spell-checking</li>
+        <li>Checking that named tests in specs actually exist</li>
+        <li>Branch protection settings (done on GitHub by you)</li>
+        <li>Other operating systems</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Spec checker written in Rust as an <code>xtask</code>, not a shell or Python script.</td>
+      <td>Same language and tooling as the project, unit-testable, and runs with nothing extra installed.</td></tr>
+  <tr><td>Seven separate jobs.</td>
+      <td>On GitHub you see at a glance which kind of check failed.</td></tr>
+  <tr><td>Coverage minimum = today's coverage, rounded down.</td>
+      <td>Coverage can only go up. No hosted service (Codecov) for now: no account or token needed.</td></tr>
+  <tr><td>Linux only, stable Rust.</td>
+      <td>shiver targets Linux desktops.</td></tr>
+  <tr><td>Actions pinned to exact versions, with build caching.</td>
+      <td>Repeatable runs and faster builds.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>The spec checker passes on specs 0001–0003 and its tests cover each rule.</li>
+  <li>Coverage, dependency and doc checks pass locally.</li>
+  <li>A push to GitHub shows the seven checks passing, with coverage on the run page.</li>
+</ul>
+
+</main>
+</body>
+</html>
