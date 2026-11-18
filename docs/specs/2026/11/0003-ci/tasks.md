@@ -7,7 +7,7 @@
 - [x] 5. Doc build passes with warnings as errors (R12)
 - [x] 6. Update `AGENTS.md` (R9)
 - [x] 7. All checks pass locally
-- [ ] 8. User pushes; the seven checks pass on GitHub and coverage shows on the run page (R1, R10)
+- [x] 8. User pushes; the seven checks pass on GitHub and coverage shows on the run page (R1, R10)
 
 ## Notes
 
@@ -23,3 +23,5 @@
   versions only warn.
 - Workspace `rust-version = "1.89"`: notify-rust and zbus require 1.89.
 - The spec checker caught this spec's own missing `tasks.md` on its first run.
+- 2026-11-18: run 44210944402 on d7b7b42 passed all seven jobs (checked via
+  the GitHub API).

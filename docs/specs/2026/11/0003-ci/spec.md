@@ -1,7 +1,7 @@
 ---
 id: 0003
 name: ci
-status: in-progress
+status: done
 created: 2026-11-18
 ---
 
@@ -33,7 +33,7 @@ Third-party actions are pinned to exact versions. Cargo builds are cached.
 
 **Acceptance:**
 - [x] The workflow file exists with the seven jobs above.
-- [ ] Manual: after pushing, the seven checks pass on GitHub.
+- [x] Manual: after pushing, the seven checks pass on GitHub.
 
 ### R2: `xtask` crate
 
@@ -131,7 +131,7 @@ summary, also when the job fails.
 **Acceptance:**
 - [x] `cargo llvm-cov --workspace --exclude xtask --fail-under-lines <min>` passes locally.
 - [x] The minimum is written in the workflow and in `tasks.md`.
-- [ ] Manual: the coverage table shows on the GitHub run summary page.
+- [x] Manual: the coverage table shows on the GitHub run summary page.
 
 ### R11: Dependency licenses and advisories
 
