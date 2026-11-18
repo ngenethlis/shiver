@@ -11,6 +11,10 @@ The overall architecture is in [`docs/design.html`](docs/design.html).
 Every feature or non-trivial change starts as a spec. **No implementation
 before the spec is approved.**
 
+Ideas that aren't specced yet live in [`docs/backlog.md`](docs/backlog.md).
+When starting one, turn it into a spec and remove it from the backlog; when
+something is deferred during a spec, add it there.
+
 ### Where specs live
 
 ```

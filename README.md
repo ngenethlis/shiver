@@ -175,6 +175,8 @@ systemctl --user list-timers shiver.timer
   and cooldowns.
 - **v2:** a custom Wayland layer-shell overlay and an optional daemon.
 
+More ideas are in the [backlog](docs/backlog.md).
+
 ## Development
 
 Work is spec-driven: each change starts as a spec in [`docs/specs/`](docs/specs/),
