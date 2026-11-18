@@ -8,7 +8,7 @@
 - [x] 6. Unit tests and CLI tests with a fake `systemctl` (R1–R5, R8, R9)
 - [x] 7. README section (R6)
 - [x] 8. All checks pass; tick acceptance criteria
-- [ ] 9. User checks it for real on COSMIC (R7)
+- [x] 9. User checks it for real on COSMIC (R7)
 
 ## Notes
 
@@ -30,3 +30,6 @@
 - Coverage rose to 96.47%; CI minimum raised from 95% to 96%.
 - Extra tests: `reads_schedule_back_from_timer_file`,
   `timer_enable_replaces_its_own_units`, `timer_status_custom_schedule`.
+- 2026-11-18: checked on COSMIC with `--every 5m --between 00:00-24:00
+  --jitter 0m`: the 01:10 slot fired (journal shows shiver.service started and
+  finished), the notification arrived, and `disable` removed both units.

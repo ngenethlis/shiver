@@ -1,7 +1,7 @@
 ---
 id: 0006
 name: timer
-status: in-progress
+status: done
 created: 2026-11-18
 ---
 
@@ -215,9 +215,9 @@ Times past midnight are shown as times of day.
 ### R7: Works for real
 
 **Acceptance:**
-- [ ] Manual: on COSMIC, after `shiver timer enable`, `shiver timer status`
+- [x] Manual: on COSMIC, after `shiver timer enable`, `shiver timer status`
       shows the next popup, and a notification arrives on its own.
-- [ ] Manual: `shiver timer disable` stops it and removes the files.
+- [x] Manual: `shiver timer disable` stops it and removes the files.
 - [x] Manual: `systemd-analyze calendar` on the generated `OnCalendar` lines
       lists the expected slots.
 
