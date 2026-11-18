@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0001: Core packs and line selection</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0001</span>: Core packs and line selection</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p>shiver has no code yet. Every command (<code>say</code>, <code>notify</code>,
+<code>list</code>) needs the same foundation: read the user's packs, know which
+voices exist, and pick a line to show. That logic belongs in
+<code>shiver-core</code> so the CLI, and anything built later, share it.</p>
+
+<h2>Proposal</h2>
+<p>Set up the Cargo workspace and build <code>shiver-core</code> with two jobs:</p>
+<ul>
+  <li><strong>Load a library of packs</strong> from a folder the caller passes in. Each
+    subfolder with a <code>pack.toml</code> is a pack. Voices from all packs go into
+    one shared pool, so a pack can add lines for voices defined elsewhere.</li>
+  <li><strong>Pick a line</strong> at random, optionally only from one voice or one tag.
+    Lines with a higher <code>weight</code> are picked more often. The result carries
+    the line's text, its voice (name and colour), and the sound and icon to use.</li>
+</ul>
+<p>Loading is forgiving: a broken pack or line is skipped and reported as a
+warning, and everything else still loads, so one mistake never stops popups. The
+core doesn't print anything; it hands warnings back to the caller.</p>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out (later specs)</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>Cargo workspace with the <code>shiver-core</code> crate</li>
+        <li><code>pack.toml</code> parsing and validation</li>
+        <li>Loading every pack in a folder, merging voices</li>
+        <li>Resolving sound and icon paths</li>
+        <li>Weighted random pick, filtered by voice and tag</li>
+        <li>Pack summaries for <code>shiver list</code></li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>The <code>shiver</code> binary and its commands</li>
+        <li>Finding <code>~/.config/shiver/packs</code></li>
+        <li>Notifications and sound playback</li>
+        <li>Cooldowns and context-aware selection</li>
+        <li>A config file</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Voices are shared across packs; if two packs define the same voice, the first wins.</td>
+      <td>Lets a pack add lines without redefining voices. Packs load in folder-name order, so “first” is predictable.</td></tr>
+  <tr><td>A malformed <code>pack.toml</code> skips that pack with a warning.</td>
+      <td>One broken pack shouldn't stop the others.</td></tr>
+  <tr><td>A line with an unknown voice is skipped with a warning.</td>
+      <td>Same reason, at line level.</td></tr>
+  <tr><td>A missing sound or icon file is dropped with a warning.</td>
+      <td>The line still shows, just without that sound or icon.</td></tr>
+  <tr><td>Weights are optional (default 1) and must be greater than 0.</td>
+      <td>Lets authors make lines rarer or more common. Invalid weights skip the line with a warning.</td></tr>
+  <tr><td>A missing packs folder means an empty library, not an error.</td>
+      <td>A fresh install has no packs yet; the CLI can say so.</td></tr>
+  <tr><td>The core takes the packs folder as an argument.</td>
+      <td>Keeps the core free of desktop and config-path logic, and easy to test.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>The workspace builds and <code>fmt</code>, <code>clippy</code> and tests are clean.</li>
+  <li>Tests cover parsing, every skip-with-warning case, voice merging, path
+    resolution, filtering, and that weights change how often lines are picked.</li>
+  <li>The test packs are original content.</li>
+</ul>
+
+</main>
+</body>
+</html>
