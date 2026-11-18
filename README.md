@@ -1,8 +1,6 @@
 <div align="center">
 
-# shiver
-
-Inner-voice popups for the desktop.
+<img src="assets/logo/banner.png" alt="shiver: inner-voice popups for the desktop. A STATIC notification reads: The bug will still be there tomorrow. You'll be better at it then." width="820">
 
 [![CI](https://img.shields.io/github/actions/workflow/status/ngenethlis/shiver/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ngenethlis/shiver/actions/workflows/ci.yml)
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-orange?logo=rust)](https://www.rust-lang.org)
