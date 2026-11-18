@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0010: Shell hook for failed commands</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0010</span>: Shell hook for failed commands</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">in-progress</span></p>
+
+<h2>Problem</h2>
+<p>The voices only speak on a timer or when asked. The moments that most call for
+an inner voice, like a build that just failed, pass in silence.</p>
+
+<h2>Proposal</h2>
+<p>One line in your shell config:</p>
+<pre><code>eval "$(shiver hook zsh)"     # in ~/.zshrc  (or: shiver hook bash, in ~/.bashrc)</code></pre>
+<p>After a command fails, shiver may show a notification with a line tagged
+<code>fail</code>. It runs in the background, so your prompt is never delayed.</p>
+<p>To keep it from becoming noise:</p>
+<ul>
+  <li><strong>Not every non-zero exit is a failure.</strong> Ctrl-C, Ctrl-Z and broken
+    pipes are ignored, and so are commands where a non-zero exit is normal:
+    <code>grep</code>, <code>rg</code>, <code>diff</code>, <code>test</code>,
+    <code>[</code>, <code>false</code>, <code>which</code>.</li>
+  <li><strong>At most one popup every 10 minutes</strong> from the hook
+    (<code>shiver hook zsh --min-gap 5m</code> to change it).</li>
+  <li><code>fail</code> lines only ever come from the hook or an explicit
+    <code>--tag fail</code>, never from the timer.</li>
+</ul>
+<p>The default pack gets a handful of new <code>fail</code> lines. Try it without
+waiting for a real failure: <code>shiver on-fail --exit-code 1 --dry-run</code>.</p>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out (later)</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li><code>shiver hook zsh|bash</code> and <code>shiver on-fail</code></li>
+        <li>Ignored exit codes and commands, rate limit</li>
+        <li><code>fail</code> as a tag the timer never uses</li>
+        <li><code>fail</code> lines in the default pack</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Changing the ignore list (config file, 0011)</li>
+        <li>fish and other shells</li>
+        <li>Escalating lines for repeated failures</li>
+        <li>Success hooks (“the build finally passed”)</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>The shell snippet is tiny and calls <code>shiver on-fail</code>; all decisions happen in Rust.</td>
+      <td>The rules are testable and identical across shells.</td></tr>
+  <tr><td>Rate limited by time, not by chance.</td>
+      <td>A burst of failures gives one voice, not a pile of popups.</td></tr>
+  <tr><td><code>fail</code> is a tag that's never active on its own.</td>
+      <td>“That didn't work” makes no sense on a random timer popup.</td></tr>
+  <tr><td>bash reads the newest history entry at each prompt.</td>
+      <td>bash has no pre-command hook. A <code>DEBUG</code> trap was tried first, but it also catches prompt commands and <code>.bashrc</code> lines, and it would replace other tools' traps. Commands kept out of history aren't seen.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Tests cover the ignore rules, the rate limit, the snippets (run in a real zsh and bash
+    with a fake shiver), and <code>on-fail --dry-run</code>.</li>
+  <li>You've added the hook to your shell and seen a popup after a failing command.</li>
+  <li>All CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

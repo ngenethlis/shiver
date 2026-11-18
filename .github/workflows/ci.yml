@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: cargo llvm-cov --workspace --exclude xtask --summary-only --fail-under-lines "$MIN_LINE_COVERAGE" | tee coverage.txt
         env:
-          MIN_LINE_COVERAGE: "96"
+          MIN_LINE_COVERAGE: "97"
       - name: Add coverage to the run summary
         if: always()
         run: |

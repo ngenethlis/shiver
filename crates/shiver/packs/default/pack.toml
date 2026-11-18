@@ -193,3 +193,35 @@ tags = ["win"]
 voice = "signal"
 text = "Write down what you just figured out. Future you will be grateful."
 tags = ["win", "focus"]
+
+# Lines for the shell hook (`shiver hook`): only shown after a failed command.
+
+[[lines]]
+voice = "static"
+text = "That error message is trying to help. Read it this time."
+tags = ["fail"]
+
+[[lines]]
+voice = "clockwork"
+text = "Same command, same error. Something has to change before you run it again."
+tags = ["fail"]
+
+[[lines]]
+voice = "backbone"
+text = "Breathe out before you press the up arrow."
+tags = ["fail"]
+
+[[lines]]
+voice = "lantern"
+text = "Failures this late are mostly tiredness in disguise."
+tags = ["fail", "late"]
+
+[[lines]]
+voice = "signal"
+text = "Now you know one more way it doesn't work."
+tags = ["fail"]
+
+[[lines]]
+voice = "clockwork"
+text = "Read the whole log, not just the last line."
+tags = ["fail"]

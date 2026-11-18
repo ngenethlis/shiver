@@ -34,14 +34,19 @@ impl Packs {
         self
     }
 
-    /// Runs `shiver --packs-dir <dir> <args>`.
-    fn run(&self, args: &[&str]) -> Output {
+    /// `shiver --packs-dir <dir> <args>`, with this sandbox's state folder.
+    fn cmd(&self, args: &[&str]) -> Command {
         let mut cmd = shiver();
         cmd.env("XDG_STATE_HOME", self.state())
             .arg("--packs-dir")
             .arg(self.dir())
             .args(args);
-        cmd.output().unwrap()
+        cmd
+    }
+
+    /// Runs `shiver --packs-dir <dir> <args>`.
+    fn run(&self, args: &[&str]) -> Output {
+        self.cmd(args).output().unwrap()
     }
 }
 
@@ -58,7 +63,13 @@ fn shiver() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_shiver"));
     cmd.env_remove("SHIVER_PACKS_DIR")
         .env_remove("NO_COLOR")
-        .env("XDG_STATE_HOME", shared_state());
+        .env("XDG_STATE_HOME", shared_state())
+        .env("XDG_DATA_HOME", shared_state().join("data"))
+        // Never reach the real desktop: any notification attempt fails.
+        .env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            "unix:path=/nonexistent/shiver-test-bus",
+        );
     cmd
 }
 
@@ -746,4 +757,201 @@ fn say_at_rejects_bad_time() {
         let out = packs.run(&["say", "--at", bad]);
         assert_eq!(out.status.code(), Some(2), "{bad}");
     }
+}
+
+const FAIL_PACK: &str = "[voices.drift]\ndisplay = \"DRIFT\"\n\
+    [[lines]]\nvoice = \"drift\"\ntext = \"That didn't work.\"\ntags = [\"fail\"]\n";
+
+#[test]
+fn on_fail_dry_run() {
+    let packs = Packs::new();
+    packs.add("p", FAIL_PACK);
+    let dry = |args: &[&str]| {
+        let mut all = vec!["on-fail", "--dry-run"];
+        all.extend_from_slice(args);
+        let out = packs.run(&all);
+        assert!(out.status.success(), "{}", stderr(&out));
+        stdout(&out)
+    };
+    assert_eq!(
+        dry(&["--exit-code", "130"]),
+        "skip: ignored exit code 130\n"
+    );
+    assert_eq!(
+        dry(&["--exit-code", "1", "--command", "grep foo bar.txt"]),
+        "skip: ignored command grep\n"
+    );
+    assert_eq!(
+        dry(&["--exit-code", "1", "--command", "cargo build"]),
+        "would notify: DRIFT: That didn't work.\n"
+    );
+
+    // A recent popup from the hook holds the next one back.
+    let last = packs.state().join("shiver/last-fail");
+    std::fs::create_dir_all(last.parent().unwrap()).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    std::fs::write(&last, format!("{}\n", now - 180)).unwrap();
+    assert_eq!(
+        dry(&["--exit-code", "1"]),
+        "skip: last popup 3m ago (min gap 10m)\n"
+    );
+    assert_eq!(
+        dry(&["--exit-code", "1", "--min-gap", "2m"]),
+        "would notify: DRIFT: That didn't work.\n"
+    );
+    // Dry runs change no state.
+    assert_eq!(
+        std::fs::read_to_string(&last).unwrap(),
+        format!("{}\n", now - 180)
+    );
+    assert!(!packs.state().join("shiver/history").exists());
+
+    let packs = Packs::new();
+    packs.add("p", ONE_LINE);
+    let out = packs.run(&["on-fail", "--dry-run", "--exit-code", "1"]);
+    assert_eq!(stdout(&out), "skip: no fail lines\n");
+}
+
+#[test]
+fn on_fail_is_silent_without_packs() {
+    let packs = Packs::new();
+    let out = packs.run(&["on-fail", "--exit-code", "1", "--command", "make"]);
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "");
+    assert_eq!(stderr(&out), "");
+}
+
+/// Runs `script` in `shell` after evaluating `shiver hook <shell>`, with the
+/// binary in the snippet replaced by a script that logs its arguments.
+/// Returns the log, or `None` if the shell isn't installed.
+fn run_hook(shell: &str, script: &str) -> Option<String> {
+    if Command::new(shell).arg("-c").arg("true").output().is_err() {
+        eprintln!("{shell} not installed; skipping");
+        return None;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("log");
+    let fake = dir.path().join("fake-shiver");
+    std::fs::write(
+        &fake,
+        format!("#!/bin/sh\necho \"$*\" >> '{}'\n", log.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let out = shiver().args(["hook", shell]).output().unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let snippet = stdout(&out).replace(&format!("'{}'", exe()), &format!("'{}'", fake.display()));
+    assert!(snippet.contains("fake-shiver"), "{snippet}");
+    let snippet_file = dir.path().join("snippet");
+    std::fs::write(&snippet_file, snippet).unwrap();
+
+    let full = format!("eval \"$(cat '{}')\"\n{script}", snippet_file.display());
+    let out = Command::new(shell).arg("-c").arg(full).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The hook runs in the background: wait for it, then a little longer to
+    // catch any unexpected extra calls.
+    for _ in 0..50 {
+        if log.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    Some(std::fs::read_to_string(&log).unwrap_or_default())
+}
+
+#[test]
+fn hook_zsh_snippet_runs() {
+    // Non-interactive zsh doesn't run hooks itself, so call them as zsh would.
+    let script = "__shiver_preexec false; false; __shiver_precmd\n\
+                  __shiver_preexec true; true; __shiver_precmd\n\
+                  __shiver_precmd\n";
+    if let Some(log) = run_hook("zsh", script) {
+        assert_eq!(log, "on-fail --exit-code 1 --command false\n");
+    }
+}
+
+#[test]
+fn hook_bash_snippet_runs() {
+    // Non-interactive bash has no history or prompt: turn history on and add
+    // entries the way an interactive shell would, then call the prompt hook.
+    let script = "set -o history\n__shiver_precmd\n\
+                  history -s false; false; __shiver_precmd\n\
+                  history -s true; true; __shiver_precmd\n\
+                  __shiver_precmd\n";
+    if let Some(log) = run_hook("bash", script) {
+        assert_eq!(log, "on-fail --exit-code 1 --command false\n");
+    }
+}
+
+#[test]
+fn hook_passes_options() {
+    let out = shiver()
+        .args(["hook", "zsh", "--min-gap", "5m", "--no-sound"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stdout(&out).contains(&format!(
+        "'{}' on-fail --exit-code \"$code\" --command \"$__shiver_cmd\" --min-gap 5m --no-sound",
+        exe()
+    )));
+}
+
+#[test]
+fn hook_rejects_unknown_shell() {
+    let out = shiver().args(["hook", "fish"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+}
+
+/// `notify` gets as far as sending the notification; the test bus address
+/// makes that fail, so nothing reaches the real desktop.
+#[test]
+fn notify_reports_unreachable_notification_server() {
+    let packs = Packs::new();
+    packs.add("p", ONE_LINE);
+    let data = packs.state().join("data");
+    let out = packs
+        .cmd(&["notify", "--no-sound"])
+        .env("XDG_DATA_HOME", &data)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).starts_with("shiver: couldn't send the notification"),
+        "{}",
+        stderr(&out)
+    );
+    // The default icon was installed for the voice without an icon...
+    assert!(data.join("shiver/icons/shiver.png").is_file());
+    // ...but a notification that wasn't shown isn't recorded.
+    assert!(!packs.state().join("shiver/history").exists());
+
+    let out = packs
+        .cmd(&["notify", "--voice", "Bot", "--text", "hi"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+}
+
+#[test]
+fn on_fail_reports_unreachable_notification_server() {
+    let packs = Packs::new();
+    packs.add("p", FAIL_PACK);
+    let out = packs
+        .cmd(&["on-fail", "--exit-code", "2", "--command", "make"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("couldn't send the notification"));
+    assert!(!packs.state().join("shiver/last-fail").exists());
 }

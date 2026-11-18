@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
-[Features](#features) – [Installation](#installation) – [Quick Start](#quick-start) – [Packs](#packs) – [Commands](#commands) – [Random Popups](#random-popups) – [Roadmap](#roadmap) – [Development](#development) – [License](#license)
+[Features](#features) – [Installation](#installation) – [Quick Start](#quick-start) – [Packs](#packs) – [Commands](#commands) – [Random Popups](#random-popups) – [Shell Hook](#shell-hook) – [Roadmap](#roadmap) – [Development](#development) – [License](#license)
 
 </div>
 
@@ -37,6 +37,8 @@ generic: every voice, line and sound comes from packs that you write.
   and voices take turns.
 - **Forgiving:** a broken pack or line is skipped with a warning; everything
   else still works.
+- **Reacts to failures:** a shell hook lets a voice speak up when a command
+  fails.
 - **Random popups:** a systemd user timer lets voices interject on their own
   through the day.
 - **Scriptable:** send one-off messages with `--text`, no pack needed.
@@ -129,6 +131,7 @@ voice doesn't speak twice in a row when another voice has something to say
 | `shiver list` | List packs, voices and line counts |
 | `shiver init [--force]` | Install the default pack |
 | `shiver timer enable \| disable \| status` | Random popups through the day ([below](#random-popups)) |
+| `shiver hook zsh\|bash [--min-gap D] [--no-sound]` | Print the shell hook ([below](#shell-hook)) |
 
 Use another packs folder with `--packs-dir DIR` or `SHIVER_PACKS_DIR`.
 Colour is turned off when output isn't a terminal, or with `NO_COLOR=1`.
@@ -179,6 +182,37 @@ systemctl --user list-timers shiver.timer
 ```
 
 </details>
+
+## Shell Hook
+
+Let a voice speak up when a command fails. Add one line to your shell config:
+
+```sh
+eval "$(shiver hook zsh)"     # ~/.zshrc
+eval "$(shiver hook bash)"    # ~/.bashrc
+```
+
+After a failed command, shiver may show a line tagged `fail` (the default pack
+has a few). It runs in the background, so your prompt never waits. To keep it
+from becoming noise:
+
+- Ctrl-C, Ctrl-Z and broken pipes don't count, and neither do commands where a
+  non-zero exit is a normal answer: `grep`, `rg`, `diff`, `test`, `[`,
+  `false`, `which` and similar.
+- There's at most one popup every 10 minutes (`shiver hook zsh --min-gap 5m`
+  to change it; add `--no-sound` for silent popups).
+- `fail` lines only come from the hook or `--tag fail`, never from the timer.
+
+Try it without waiting for a real failure:
+
+```console
+$ shiver on-fail --exit-code 1 --command "cargo build" --dry-run
+would notify: CLOCKWORK: Read the whole log, not just the last line.
+```
+
+In bash, the hook reads the shell history to see which command ran, so
+commands kept out of the history (`HISTCONTROL=ignorespace`, or repeats with
+`ignoredups`) don't trigger it.
 
 ## Roadmap
 

@@ -2,6 +2,7 @@
 //! desktop notification.
 
 mod history;
+mod hook;
 mod icon;
 mod init;
 mod notify;
@@ -55,6 +56,43 @@ enum Command {
         #[command(subcommand)]
         action: TimerAction,
     },
+    /// Print a shell snippet that lets a voice react to failed commands.
+    ///
+    /// Add `eval "$(shiver hook zsh)"` to ~/.zshrc (or `bash`, to ~/.bashrc).
+    Hook(HookArgs),
+    /// Called by the shell hook after a failed command; may show a `fail` line.
+    OnFail(OnFailArgs),
+}
+
+#[derive(Args)]
+struct HookArgs {
+    /// The shell to print the snippet for.
+    shell: hook::Shell,
+    /// At most one popup per this long [default: 10m].
+    #[arg(long, value_parser = timer::parse_duration)]
+    min_gap: Option<u32>,
+    /// Popups from the hook are silent.
+    #[arg(long)]
+    no_sound: bool,
+}
+
+#[derive(Args)]
+struct OnFailArgs {
+    /// The failed command's exit code.
+    #[arg(long, allow_hyphen_values = true)]
+    exit_code: i32,
+    /// The command line that failed.
+    #[arg(long, allow_hyphen_values = true)]
+    command: Option<String>,
+    /// At most one popup per this long.
+    #[arg(long, default_value = "10m", value_parser = timer::parse_duration)]
+    min_gap: u32,
+    /// Don't play a sound.
+    #[arg(long)]
+    no_sound: bool,
+    /// Print the decision instead of notifying; changes no state.
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Subcommand)]
@@ -153,10 +191,22 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // `timer` doesn't need the packs either.
-    if let Command::Timer { action } = cli.command {
-        return run_timer(action, explicit_dir.as_deref());
-    }
+    // `timer` and `hook` don't need the packs either.
+    let command = match cli.command {
+        Command::Timer { action } => return run_timer(action, explicit_dir.as_deref()),
+        Command::Hook(args) => {
+            let exe = std::env::current_exe()
+                .and_then(|p| p.canonicalize())
+                .context("can't find the shiver binary's path")?;
+            print!(
+                "{}",
+                hook::snippet(args.shell, &exe, args.min_gap, args.no_sound)
+            );
+            return Ok(());
+        }
+        Command::OnFail(args) => return on_fail(&args, &dir),
+        command => command,
+    };
 
     let (chorus, warnings) = Chorus::load(&dir)?;
     for warning in &warnings {
@@ -167,7 +217,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         None => rand::make_rng(),
     };
 
-    match cli.command {
+    match command {
         Command::Say(args) => {
             let filter = Filter {
                 voice: args.voice,
@@ -211,7 +261,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             print!("{}", list(&chorus, &dir));
             Ok(())
         }
-        Command::Init { .. } | Command::Timer { .. } => {
+        Command::Init { .. } | Command::Timer { .. } | Command::Hook(_) | Command::OnFail(_) => {
             unreachable!("handled before loading the chorus")
         }
     }
@@ -249,6 +299,67 @@ fn run_timer(action: TimerAction, packs_dir: Option<&Path>) -> anyhow::Result<()
     };
     for line in lines {
         println!("{line}");
+    }
+    Ok(())
+}
+
+/// `shiver on-fail`: maybe show a `fail` line. Quiet unless `--dry-run`.
+fn on_fail(args: &OnFailArgs, dir: &Path) -> anyhow::Result<()> {
+    let say = |msg: String| {
+        if args.dry_run {
+            println!("{msg}");
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let last_path = hook::last_fail_path();
+    let last = last_path.as_deref().and_then(hook::read_last_fail);
+    if let Some(reason) = hook::skip_reason(
+        args.exit_code,
+        args.command.as_deref(),
+        last,
+        now,
+        args.min_gap,
+    ) {
+        say(format!("skip: {reason}"));
+        return Ok(());
+    }
+
+    // Pack warnings are left to `say` and `list`; the hook stays quiet.
+    let Ok((chorus, _warnings)) = Chorus::load(dir) else {
+        say("skip: no fail lines".into());
+        return Ok(());
+    };
+    let filter = Filter {
+        voice: None,
+        tag: Some("fail".into()),
+        context: context(None),
+    };
+    let recent = Recent::load();
+    let Some(line) = chorus.pick_with_history(
+        &filter,
+        &history::seen(&recent.entries),
+        &mut rand::make_rng::<StdRng>(),
+    ) else {
+        say("skip: no fail lines".into());
+        return Ok(());
+    };
+    if args.dry_run {
+        say(format!(
+            "would notify: {}: {}",
+            line.voice.display, line.text
+        ));
+        return Ok(());
+    }
+
+    notify::Notify.emit(&line)?;
+    recent.record(&line);
+    if let Some(path) = &last_path {
+        hook::write_last_fail(path, now);
+    }
+    if !args.no_sound {
+        sound::Sound.emit(&line)?;
     }
     Ok(())
 }

@@ -4,12 +4,16 @@
 /// inclusive, end exclusive). An end before the start crosses midnight.
 const WINDOWS: [(&str, u32, u32); 2] = [("morning", 5 * 60, 11 * 60), ("late", 22 * 60, 5 * 60)];
 
+/// Event tags: context tags that are never active on their own, so their
+/// lines only come when asked for explicitly (e.g. by the shell hook).
+const EVENT_TAGS: [&str; 1] = ["fail"];
+
 /// How much more likely a line with an active context tag is.
 pub(crate) const BOOST: f64 = 3.0;
 
-/// Whether `tag` is a context tag (`morning`, `late`).
+/// Whether `tag` is a context tag (`morning`, `late`) or an event tag (`fail`).
 pub fn is_context_tag(tag: &str) -> bool {
-    WINDOWS.iter().any(|(t, _, _)| *t == tag)
+    WINDOWS.iter().any(|(t, _, _)| *t == tag) || EVENT_TAGS.contains(&tag)
 }
 
 /// The context tags active at one moment.
@@ -77,5 +81,13 @@ mod tests {
         assert!(is_context_tag("late"));
         assert!(is_context_tag("morning"));
         assert!(!is_context_tag("focus"));
+    }
+
+    #[test]
+    fn fail_is_never_active() {
+        assert!(is_context_tag("fail"));
+        for minutes in (0..24 * 60).step_by(15) {
+            assert!(!Context::at(minutes).is_active("fail"));
+        }
     }
 }

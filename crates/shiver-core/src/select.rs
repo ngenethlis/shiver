@@ -470,6 +470,22 @@ mod tests {
     }
 
     #[test]
+    fn fail_lines_need_explicit_tag() {
+        let packs = Packs::new();
+        packs.add(
+            "p",
+            "[voices.drift]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"oops\"\ntags = [\"fail\"]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"any\"\n",
+        );
+        let (chorus, _) = Chorus::load(packs.dir()).unwrap();
+        for hour in [3, 7, 12, 23] {
+            assert_eq!(texts(&chorus, &at(hour, None)), ["any"]);
+            assert_eq!(texts(&chorus, &at(hour, Some("fail"))), ["oops"]);
+        }
+    }
+
+    #[test]
     fn active_context_boosts() {
         let (_p, chorus) = timed();
         let mut rng = StdRng::seed_from_u64(8);

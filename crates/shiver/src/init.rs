@@ -53,7 +53,7 @@ mod tests {
     use super::*;
 
     const VOICES: [&str; 5] = ["backbone", "clockwork", "lantern", "signal", "static"];
-    const TAGS: [&str; 5] = ["break", "focus", "late", "morning", "win"];
+    const TAGS: [&str; 6] = ["break", "fail", "focus", "late", "morning", "win"];
 
     fn installed() -> (tempfile::TempDir, Chorus) {
         let dir = tempfile::tempdir().unwrap();
