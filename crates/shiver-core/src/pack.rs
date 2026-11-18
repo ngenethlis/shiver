@@ -38,6 +38,28 @@ pub struct Line {
     pub sound: Option<PathBuf>,
 }
 
+impl Line {
+    /// Stable id of this line, from its voice and text (see [`line_id`]).
+    pub fn id(&self) -> u64 {
+        line_id(&self.voice, &self.text)
+    }
+}
+
+/// A stable 64-bit id for a line: FNV-1a over the voice key, a `0` byte and
+/// the text. It doesn't depend on the pack or the line's position, so editing
+/// other lines doesn't change it.
+pub fn line_id(voice: &str, text: &str) -> u64 {
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    voice
+        .bytes()
+        .chain([0])
+        .chain(text.bytes())
+        .fold(OFFSET, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(PRIME)
+        })
+}
+
 /// A parsed pack, before validation.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Pack {
@@ -222,6 +244,21 @@ mod tests {
         "#;
         let pack = parse(src, Path::new("/packs/p")).unwrap();
         assert_eq!(pack.lines.len(), 1);
+    }
+
+    #[test]
+    fn line_id_is_stable() {
+        // Computed independently; must never change, or every user's history resets.
+        assert_eq!(line_id("drift", "Hello."), 0x9688_f4e4_ba6e_85a6);
+    }
+
+    #[test]
+    fn line_id_depends_on_voice_and_text() {
+        let id = line_id("drift", "Hello.");
+        assert_ne!(id, line_id("ember", "Hello."));
+        assert_ne!(id, line_id("drift", "Hello!"));
+        // The separator keeps "ab"+"c" apart from "a"+"bc".
+        assert_ne!(line_id("ab", "c"), line_id("a", "bc"));
     }
 
     #[test]

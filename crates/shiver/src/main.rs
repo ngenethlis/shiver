@@ -1,6 +1,7 @@
 //! The `shiver` command: show a line from a voice in the terminal or as a
 //! desktop notification.
 
+mod history;
 mod init;
 mod notify;
 mod output;
@@ -165,24 +166,33 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 voice: args.voice,
                 tag: args.tag,
             };
-            let line = pick(&chorus, &dir, &filter, &mut rng)?;
-            stdout::Stdout::detect().emit(&line)
+            let recent = Recent::load();
+            let line = pick(&chorus, &dir, &filter, &recent, &mut rng)?;
+            stdout::Stdout::detect().emit(&line)?;
+            recent.record(&line);
+            Ok(())
         }
         Command::Notify(args) => {
-            let line = match args.text {
+            // One-off messages don't touch the history.
+            let (line, recent) = match args.text {
                 Some(text) => {
                     let voice = args.voice.expect("clap requires --voice with --text");
-                    notify::one_off(&chorus, &voice, &text, args.sound)
+                    (notify::one_off(&chorus, &voice, &text, args.sound), None)
                 }
                 None => {
                     let filter = Filter {
                         voice: args.voice,
                         tag: args.tag,
                     };
-                    pick(&chorus, &dir, &filter, &mut rng)?
+                    let recent = Recent::load();
+                    let line = pick(&chorus, &dir, &filter, &recent, &mut rng)?;
+                    (line, Some(recent))
                 }
             };
             notify::Notify.emit(&line)?;
+            if let Some(recent) = recent {
+                recent.record(&line);
+            }
             if !args.no_sound {
                 sound::Sound.emit(&line)?;
             }
@@ -234,16 +244,40 @@ fn run_timer(action: TimerAction, packs_dir: Option<&Path>) -> anyhow::Result<()
     Ok(())
 }
 
+/// Recent picks, for cooldowns. Without a state folder, it's empty and
+/// nothing is recorded.
+struct Recent {
+    path: Option<PathBuf>,
+    entries: Vec<history::Entry>,
+}
+
+impl Recent {
+    fn load() -> Self {
+        let path = history::path();
+        let entries = path.as_deref().map(history::load).unwrap_or_default();
+        Recent { path, entries }
+    }
+
+    fn record(self, line: &Interjection) {
+        if let Some(path) = &self.path {
+            history::record(path, self.entries, line);
+        }
+    }
+}
+
 fn pick(
     chorus: &Chorus,
     dir: &Path,
     filter: &Filter,
+    recent: &Recent,
     rng: &mut StdRng,
 ) -> anyhow::Result<Interjection> {
     if chorus.packs().is_empty() {
         bail!("no packs found in {}; {INIT_HINT}", dir.display());
     }
-    chorus.pick(filter, rng).context("no matching lines")
+    chorus
+        .pick_with_history(filter, &history::seen(&recent.entries), rng)
+        .context("no matching lines")
 }
 
 fn list(chorus: &Chorus, dir: &Path) -> String {

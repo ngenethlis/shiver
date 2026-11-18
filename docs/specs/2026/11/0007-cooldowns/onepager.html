@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0007: Cooldowns</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0007</span>: Cooldowns</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p>Every pick is independent, so with the timer running all day the same line
+can come back within minutes, and one voice can speak several times in a row.
+It makes the voices feel like a random generator instead of characters.</p>
+
+<h2>Proposal</h2>
+<p>shiver remembers its recent picks and steers away from them:</p>
+<ul>
+  <li><strong>No repeated lines:</strong> a line isn't shown again until every other
+    matching line has had a turn, as far as the history reaches (the last 50 picks).
+    With the 30-line default pack, a line can't repeat within 30 popups.</li>
+  <li><strong>When everything has been seen:</strong> for example
+    <code>--tag win</code> with only five matching lines, shiver picks among the
+    half that was shown longest ago, so it still never repeats the latest ones.</li>
+  <li><strong>Voices take turns:</strong> the same voice doesn't speak twice in a
+    row if another voice has a line available. Asking for a voice with
+    <code>--voice</code> turns this off.</li>
+  <li>Weights still apply within whatever is left.</li>
+</ul>
+<p>The history is a small text file in <code>~/.local/state/shiver/history</code>,
+written by <code>say</code> and <code>notify</code> (not by one-off
+<code>--text</code> messages). Deleting it resets everything.</p>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out (later)</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>History file: read, append, keep the last 50</li>
+        <li>Line and voice cooldowns in the core</li>
+        <li><code>say</code> and <code>notify</code> use them</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Configuring the history size or turning cooldowns off (config file, 0010)</li>
+        <li>Time-based cooldowns (“not within 2 hours”)</li>
+        <li>A command to show or clear the history</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Count-based (recent picks), not time-based.</td>
+      <td>Works the same whether you call <code>say</code> ten times a minute or the timer fires hourly.</td></tr>
+  <tr><td>Lines are identified by a hash of voice and text.</td>
+      <td>Editing or reordering other lines doesn't reset the history; editing a line's own text makes it fresh.</td></tr>
+  <tr><td>The cooldown logic lives in <code>shiver-core</code>; the file lives in the binary.</td>
+      <td>The core stays pure and testable; only the binary touches the state folder.</td></tr>
+  <tr><td>An unreadable or corrupt history is ignored with a warning, never an error.</td>
+      <td>Losing the history only means a repeat might happen.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Tests show: no repeats until all lines are used, fallback to the oldest half,
+    voices alternate, <code>--voice</code> disables the voice rule, and the history
+    file is written, trimmed to 50 and survives corruption.</li>
+  <li>All CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

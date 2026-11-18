@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use notify_rust::Notification;
-use shiver_core::{Chorus, Interjection, Voice};
+use shiver_core::{Chorus, Interjection, Voice, line_id};
 
 use crate::output::Output;
 
@@ -52,6 +52,7 @@ pub fn one_off(chorus: &Chorus, voice: &str, text: &str, sound: Option<PathBuf>)
         icon: None,
     });
     Interjection {
+        id: line_id(&voice.key, text),
         text: text.to_owned(),
         sound: sound.or_else(|| voice.sound.clone()),
         icon: voice.icon.clone(),

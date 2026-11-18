@@ -5,16 +5,26 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
-/// A temporary packs folder.
-struct Packs(TempDir);
+/// A temporary packs folder, with its own history (state) folder next to it.
+struct Packs {
+    root: TempDir,
+    packs: std::path::PathBuf,
+}
 
 impl Packs {
     fn new() -> Self {
-        Packs(tempfile::tempdir().unwrap())
+        let root = tempfile::tempdir().unwrap();
+        let packs = root.path().join("packs");
+        std::fs::create_dir(&packs).unwrap();
+        Packs { root, packs }
     }
 
     fn dir(&self) -> &Path {
-        self.0.path()
+        &self.packs
+    }
+
+    fn state(&self) -> std::path::PathBuf {
+        self.root.path().join("state")
     }
 
     fn add(&self, folder: &str, pack_toml: &str) -> &Self {
@@ -27,15 +37,28 @@ impl Packs {
     /// Runs `shiver --packs-dir <dir> <args>`.
     fn run(&self, args: &[&str]) -> Output {
         let mut cmd = shiver();
-        cmd.arg("--packs-dir").arg(self.dir()).args(args);
+        cmd.env("XDG_STATE_HOME", self.state())
+            .arg("--packs-dir")
+            .arg(self.dir())
+            .args(args);
         cmd.output().unwrap()
     }
+}
+
+/// A state folder shared by tests that don't care about history, so the
+/// real `~/.local/state` is never touched. Removed when the tests exit... or
+/// left in the temp folder if they crash, which is harmless.
+fn shared_state() -> &'static Path {
+    static STATE: std::sync::OnceLock<TempDir> = std::sync::OnceLock::new();
+    STATE.get_or_init(|| tempfile::tempdir().unwrap()).path()
 }
 
 /// The binary, without any environment that would change its behaviour.
 fn shiver() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_shiver"));
-    cmd.env_remove("SHIVER_PACKS_DIR").env_remove("NO_COLOR");
+    cmd.env_remove("SHIVER_PACKS_DIR")
+        .env_remove("NO_COLOR")
+        .env("XDG_STATE_HOME", shared_state());
     cmd
 }
 
@@ -164,7 +187,9 @@ fn say_filters_by_voice_and_tag() {
 fn say_same_seed_same_line() {
     let packs = Packs::new();
     packs.add("p", SEVERAL);
+    // Same seed and same (empty) history give the same line.
     let a = packs.run(&["--seed", "9", "say"]);
+    std::fs::remove_dir_all(packs.state()).unwrap();
     let b = packs.run(&["say", "--seed", "9"]);
     assert_eq!(stdout(&a), stdout(&b));
 }
@@ -635,4 +660,60 @@ fn timer_status_not_enabled() {
     let out = env.run(&["timer", "status"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "timer not enabled\n");
+}
+
+#[test]
+fn say_does_not_repeat_lines() {
+    let packs = Packs::new();
+    packs.add(
+        "p",
+        "[voices.v]\n\
+         [[lines]]\nvoice = \"v\"\ntext = \"one\"\n\
+         [[lines]]\nvoice = \"v\"\ntext = \"two\"\n\
+         [[lines]]\nvoice = \"v\"\ntext = \"three\"\n",
+    );
+    for seed in 0..5 {
+        let _ = std::fs::remove_dir_all(packs.state());
+        let mut seen: Vec<String> = (0..3)
+            .map(|n| {
+                let seed = (seed * 10 + n).to_string();
+                let out = packs.run(&["say", "--seed", &seed]);
+                assert!(out.status.success(), "{}", stderr(&out));
+                stdout(&out)
+            })
+            .collect();
+        seen.sort();
+        seen.dedup();
+        assert_eq!(seen.len(), 3, "seed {seed}: {seen:?}");
+    }
+}
+
+#[test]
+fn history_uses_state_dir() {
+    let packs = Packs::new();
+    packs.add("p", ONE_LINE);
+    let out = packs.run(&["say"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let history = std::fs::read_to_string(packs.state().join("shiver/history")).unwrap();
+    let fields: Vec<_> = history.trim().split(' ').collect();
+    assert_eq!(fields.len(), 3, "{history}");
+    assert_eq!(fields[1].len(), 16);
+    assert_eq!(fields[2], "drift");
+}
+
+#[test]
+fn corrupt_history_only_warns() {
+    let packs = Packs::new();
+    packs.add("p", ONE_LINE);
+    let file = packs.state().join("shiver/history");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "not a history line\n").unwrap();
+    let out = packs.run(&["say"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stdout(&out).contains("Water the plant."));
+    assert!(
+        stderr(&out).contains("ignored 1 malformed line(s) in history"),
+        "{}",
+        stderr(&out)
+    );
 }

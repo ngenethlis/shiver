@@ -121,6 +121,7 @@ mod tests {
 
     fn line(text: &str, color: Option<&str>) -> Interjection {
         Interjection {
+            id: 0,
             voice: Voice {
                 key: "drift".into(),
                 display: "DRIFT".into(),

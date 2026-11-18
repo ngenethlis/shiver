@@ -1,5 +1,6 @@
 //! Picking a line to show.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use rand::Rng;
@@ -7,7 +8,7 @@ use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 
 use crate::chorus::Chorus;
-use crate::pack::Voice;
+use crate::pack::{Line, Voice};
 
 /// Which lines may be picked. Empty fields match everything.
 #[derive(Debug, Clone, Default)]
@@ -18,9 +19,20 @@ pub struct Filter {
     pub tag: Option<String>,
 }
 
+/// A line that was shown before, as recorded in the history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seen {
+    /// The line's id ([`Line::id`]).
+    pub id: u64,
+    /// The voice that said it.
+    pub voice: String,
+}
+
 /// A picked line, ready to show.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interjection {
+    /// The line's id ([`Line::id`]), for recording it in the history.
+    pub id: u64,
     /// The voice saying the line.
     pub voice: Voice,
     /// The line's text.
@@ -36,20 +48,63 @@ impl Chorus {
     ///
     /// Returns `None` if no line matches.
     pub fn pick<R: Rng + ?Sized>(&self, filter: &Filter, rng: &mut R) -> Option<Interjection> {
-        let candidates: Vec<_> = self
+        self.pick_with_history(filter, &[], rng)
+    }
+
+    /// Like [`Chorus::pick`], but avoids what was shown recently.
+    ///
+    /// `history` is the recent picks, oldest first. Lines not in the history
+    /// are preferred; if every matching line is in it, the half shown longest
+    /// ago is used. Unless `filter` names a voice, the last pick's voice is
+    /// skipped when another voice has a line available.
+    pub fn pick_with_history<R: Rng + ?Sized>(
+        &self,
+        filter: &Filter,
+        history: &[Seen],
+        rng: &mut R,
+    ) -> Option<Interjection> {
+        let candidates: Vec<&Line> = self
             .lines
             .iter()
             .filter(|l| filter.voice.as_ref().is_none_or(|v| &l.voice == v))
             .filter(|l| filter.tag.as_ref().is_none_or(|t| l.tags.contains(t)))
             .collect();
+        if candidates.is_empty() {
+            return None;
+        }
 
-        // Weights are validated at load time (finite, > 0), so this only fails
-        // when there are no candidates.
-        let index = WeightedIndex::new(candidates.iter().map(|l| l.weight)).ok()?;
-        let line = candidates[index.sample(rng)];
+        // Position of each id's most recent showing.
+        let last_shown: HashMap<u64, usize> =
+            history.iter().enumerate().map(|(i, s)| (s.id, i)).collect();
+        let fresh: Vec<&Line> = candidates
+            .iter()
+            .copied()
+            .filter(|l| !last_shown.contains_key(&l.id()))
+            .collect();
+        let mut pool = if fresh.is_empty() {
+            let mut oldest_first = candidates;
+            oldest_first.sort_by_key(|l| last_shown.get(&l.id()).copied());
+            oldest_first.truncate(oldest_first.len().div_ceil(2));
+            oldest_first
+        } else {
+            fresh
+        };
+
+        if filter.voice.is_none()
+            && let Some(last) = history.last()
+            && pool.iter().any(|l| l.voice != last.voice)
+        {
+            pool.retain(|l| l.voice != last.voice);
+        }
+
+        // Weights are validated at load time (finite, > 0) and the pool isn't
+        // empty, so this can't fail.
+        let index = WeightedIndex::new(pool.iter().map(|l| l.weight)).ok()?;
+        let line = pool[index.sample(rng)];
         let voice = self.voices.get(&line.voice)?.clone();
 
         Some(Interjection {
+            id: line.id(),
             text: line.text.clone(),
             sound: line.sound.clone().or_else(|| voice.sound.clone()),
             icon: voice.icon.clone(),
@@ -189,6 +244,149 @@ mod tests {
             .count();
 
         let share = common as f64 / picks as f64;
+        assert!((0.85..=0.95).contains(&share), "common share was {share}");
+    }
+
+    /// Picks `n` times, feeding each pick into the history.
+    fn run(
+        chorus: &Chorus,
+        filter: &Filter,
+        seed: u64,
+        n: usize,
+    ) -> (Vec<Interjection>, Vec<Seen>) {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut history = Vec::new();
+        let mut picks = Vec::new();
+        for _ in 0..n {
+            let i = chorus
+                .pick_with_history(filter, &history, &mut rng)
+                .unwrap();
+            history.push(Seen {
+                id: i.id,
+                voice: i.voice.key.clone(),
+            });
+            picks.push(i);
+        }
+        (picks, history)
+    }
+
+    fn one_voice(lines: usize) -> (Packs, Chorus) {
+        let packs = Packs::new();
+        let mut toml = "[voices.drift]\n".to_owned();
+        for n in 0..lines {
+            toml.push_str(&format!(
+                "[[lines]]\nvoice = \"drift\"\ntext = \"line {n}\"\n"
+            ));
+        }
+        packs.add("p", &toml);
+        let (chorus, _) = Chorus::load(packs.dir()).unwrap();
+        (packs, chorus)
+    }
+
+    fn two_voices(lines_each: usize) -> (Packs, Chorus) {
+        let packs = Packs::new();
+        let mut toml = "[voices.drift]\n[voices.ember]\n".to_owned();
+        for n in 0..lines_each {
+            for v in ["drift", "ember"] {
+                toml.push_str(&format!("[[lines]]\nvoice = \"{v}\"\ntext = \"{v} {n}\"\n"));
+            }
+        }
+        packs.add("p", &toml);
+        let (chorus, _) = Chorus::load(packs.dir()).unwrap();
+        (packs, chorus)
+    }
+
+    #[test]
+    fn prefers_unseen_lines() {
+        let (_p, chorus) = one_voice(6);
+        for seed in 0..20 {
+            let (picks, _) = run(&chorus, &Filter::default(), seed, 6);
+            let mut texts: Vec<_> = picks.iter().map(|i| i.text.as_str()).collect();
+            texts.sort();
+            texts.dedup();
+            assert_eq!(texts.len(), 6, "seed {seed}: {texts:?}");
+        }
+    }
+
+    #[test]
+    fn falls_back_to_oldest_half() {
+        let (_p, chorus) = one_voice(6);
+        // History: line 0 shown first (oldest) ... line 5 last.
+        let history: Vec<Seen> = (0..6)
+            .map(|n| Seen {
+                id: crate::pack::line_id("drift", &format!("line {n}")),
+                voice: "drift".into(),
+            })
+            .collect();
+        let mut rng = StdRng::seed_from_u64(11);
+        for _ in 0..200 {
+            let i = chorus
+                .pick_with_history(&Filter::default(), &history, &mut rng)
+                .unwrap();
+            assert!(
+                ["line 0", "line 1", "line 2"].contains(&i.text.as_str()),
+                "{} isn't in the older half",
+                i.text
+            );
+        }
+    }
+
+    #[test]
+    fn voices_take_turns() {
+        let (_p, chorus) = two_voices(30);
+        for seed in 0..10 {
+            let (picks, _) = run(&chorus, &Filter::default(), seed, 50);
+            for pair in picks.windows(2) {
+                assert_ne!(pair[0].voice.key, pair[1].voice.key, "seed {seed}");
+            }
+        }
+    }
+
+    #[test]
+    fn voice_turn_allows_only_voice() {
+        let (_p, chorus) = one_voice(3);
+        let (picks, _) = run(&chorus, &Filter::default(), 1, 10);
+        assert_eq!(picks.len(), 10);
+        assert!(picks.iter().all(|i| i.voice.key == "drift"));
+    }
+
+    #[test]
+    fn voice_filter_skips_voice_turn() {
+        let (_p, chorus) = two_voices(10);
+        let filter = Filter {
+            voice: Some("ember".into()),
+            tag: None,
+        };
+        let (picks, _) = run(&chorus, &filter, 3, 8);
+        assert!(picks.iter().all(|i| i.voice.key == "ember"));
+    }
+
+    #[test]
+    fn history_keeps_weights() {
+        let packs = Packs::new();
+        packs.add(
+            "p",
+            "[voices.drift]\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"rare\"\nweight = 1\n\
+             [[lines]]\nvoice = \"drift\"\ntext = \"common\"\nweight = 9\n",
+        );
+        let (chorus, _) = Chorus::load(packs.dir()).unwrap();
+        // History about unrelated lines doesn't change the odds.
+        let history = vec![Seen {
+            id: 42,
+            voice: "other".into(),
+        }];
+        let mut rng = StdRng::seed_from_u64(2026);
+        let common = (0..10_000)
+            .filter(|_| {
+                chorus
+                    .pick_with_history(&Filter::default(), &history, &mut rng)
+                    .unwrap()
+                    .text
+                    == "common"
+            })
+            .count();
+        let share = common as f64 / 10_000.0;
         assert!((0.85..=0.95).contains(&share), "common share was {share}");
     }
 

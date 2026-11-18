@@ -12,5 +12,5 @@ mod select;
 mod test_util;
 
 pub use chorus::{Chorus, LoadError, PackSummary, Warning};
-pub use pack::{Line, Voice};
-pub use select::{Filter, Interjection};
+pub use pack::{Line, Voice, line_id};
+pub use select::{Filter, Interjection, Seen};

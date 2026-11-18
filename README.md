@@ -33,6 +33,8 @@ generic: every voice, line and sound comes from packs that you write.
   sound with PipeWire or PulseAudio.
 - **Weighted picks:** make lines rarer or more common, and narrow the pick by
   voice or tag.
+- **No repeats:** a line doesn't come back until the others have had a turn,
+  and voices take turns.
 - **Forgiving:** a broken pack or line is skipped with a warning; everything
   else still works.
 - **Random popups:** a systemd user timer lets voices interject on their own
@@ -105,6 +107,11 @@ Voices are shared between packs, so one pack can add lines for a voice defined
 in another. If two packs define the same voice, the first (by folder name) wins.
 
 Run `shiver list` to see what's loaded. Problems are printed as warnings.
+
+shiver remembers its last 50 picks in `~/.local/state/shiver/history`. A line
+isn't repeated until every other matching line has been shown, and the same
+voice doesn't speak twice in a row when another voice has something to say
+(unless you ask for a voice with `--voice`). Delete the file to start fresh.
 
 ## Commands
 
