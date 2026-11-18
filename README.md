@@ -8,7 +8,7 @@ Inner-voice popups for the desktop.
 [![Rust](https://img.shields.io/badge/Rust-1.89%2B-orange?logo=rust)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
-[Features](#features) – [Installation](#installation) – [Quick Start](#quick-start) – [Packs](#packs) – [Commands](#commands) – [Roadmap](#roadmap) – [Development](#development) – [License](#license)
+[Features](#features) – [Installation](#installation) – [Quick Start](#quick-start) – [Packs](#packs) – [Commands](#commands) – [Random Popups](#random-popups) – [Roadmap](#roadmap) – [Development](#development) – [License](#license)
 
 </div>
 
@@ -35,6 +35,8 @@ generic: every voice, line and sound comes from packs that you write.
   voice or tag.
 - **Forgiving:** a broken pack or line is skipped with a warning; everything
   else still works.
+- **Random popups:** a systemd user timer lets voices interject on their own
+  through the day.
 - **Scriptable:** send one-off messages with `--text`, no pack needed.
 
 ## Installation
@@ -113,14 +115,62 @@ Run `shiver list` to see what's loaded. Problems are printed as warnings.
 | `shiver notify --voice V --text "..." [--sound FILE]` | Show a one-off message |
 | `shiver list` | List packs, voices and line counts |
 | `shiver init [--force]` | Install the default pack |
+| `shiver timer enable \| disable \| status` | Random popups through the day ([below](#random-popups)) |
 
 Use another packs folder with `--packs-dir DIR` or `SHIVER_PACKS_DIR`.
 Colour is turned off when output isn't a terminal, or with `NO_COLOR=1`.
 
+## Random Popups
+
+Let the voices interject on their own with a systemd user timer:
+
+```console
+$ shiver timer enable
+wrote ~/.config/systemd/user/shiver.service
+wrote ~/.config/systemd/user/shiver.timer
+schedule: every 45m between 09:00-21:00, jitter 20m (popups 09:00-20:35)
+timer enabled; next popup: Wed 2026-11-18 10:47:00 GMT
+
+$ shiver timer status     # schedule and next popup
+$ shiver timer disable    # stop and remove the timer
+```
+
+By default a popup comes about every 45 minutes between 9:00 and 21:00. Change
+it with:
+
+| Option | Default | What it does |
+|---|---|---|
+| `--every` | `45m` | Time between popups, e.g. `30m`, `1h`, `1h30m` (at least `5m`) |
+| `--between` | `09:00-21:00` | Daily window; `00:00-24:00` for all day, `22:00-02:00` crosses midnight |
+| `--jitter` | `20m` | Each popup comes at a random point up to this long after its slot; `0m` for exact times |
+
+Run `enable` again to change the schedule. Because of the jitter, the last
+popup can come a little after the window ends; `enable` warns you if it will.
+Missed popups (computer asleep) are skipped, not caught up.
+
+The timer runs the binary that ran `enable`, and uses `--packs-dir` or
+`SHIVER_PACKS_DIR` if you gave one.
+
+<details>
+<summary>Setting up the timer by hand</summary>
+
+Example units are in [`contrib/systemd/`](contrib/systemd/). They expect the
+binary at `~/.cargo/bin/shiver`; edit `ExecStart` if it's elsewhere.
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp contrib/systemd/shiver.service contrib/systemd/shiver.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now shiver.timer
+systemctl --user list-timers shiver.timer
+```
+
+</details>
+
 ## Roadmap
 
-- **v0:** CLI, stdout and desktop notifications, sound via PipeWire/PulseAudio.
-  Still to come: a systemd timer for random popups.
+- **v0:** CLI, stdout and desktop notifications, sound via PipeWire/PulseAudio,
+  a default pack and random popups with a systemd timer.
 - **v1:** context-aware selection (time of day, idle, failed shell command)
   and cooldowns.
 - **v2:** a custom Wayland layer-shell overlay and an optional daemon.

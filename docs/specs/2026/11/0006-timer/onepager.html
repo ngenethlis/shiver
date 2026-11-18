@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0006: Random popups with a systemd timer</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0006</span>: Random popups with a systemd timer</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">in-progress</span></p>
+
+<h2>Problem</h2>
+<p>shiver only speaks when asked. The point is for voices to interject on their
+own through the day, and v0 planned a systemd user timer for that instead of a
+daemon. Today users would have to write the timer themselves.</p>
+
+<h2>Proposal</h2>
+<p>Two ways to set it up, both producing the same timer:</p>
+<ul>
+  <li><strong><code>shiver timer enable</code></strong> writes the service and timer
+    to <code>~/.config/systemd/user/</code>, using the exact path of the running
+    <code>shiver</code> binary, and starts the timer. <code>shiver timer disable</code>
+    stops it and removes the files. <code>shiver timer status</code> shows when the
+    next popup is due.</li>
+  <li><strong>Example files</strong> in <code>contrib/systemd/</code>, with README
+    steps, for people who prefer to manage units themselves. They assume the binary
+    is at <code>~/.cargo/bin/shiver</code>.</li>
+</ul>
+
+<h3>Schedule</h3>
+<p>By default, a popup roughly every 45 minutes between 9:00 and 21:00: 16 slots
+(9:00, 9:45, 10:30, … 20:15), each fired at a random point up to 20 minutes
+after the slot, so they don't feel mechanical. Nothing at night, and missed slots
+(computer asleep) are skipped, not caught up.</p>
+<p>Three options change it:</p>
+<table>
+  <tr><th>Option</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>--every</code></td><td><code>45m</code></td><td>Time between slots, e.g. <code>30m</code>, <code>1h</code>, <code>1h30m</code>.</td></tr>
+  <tr><td><code>--between</code></td><td><code>09:00-21:00</code></td><td>Daily window the slots fall in. <code>00:00-24:00</code> for all day; <code>22:00-02:00</code> crosses midnight.</td></tr>
+  <tr><td><code>--jitter</code></td><td><code>20m</code></td><td>Each popup comes at a random point up to this long after its slot. <code>0m</code> for exact times.</td></tr>
+</table>
+<p>Running <code>enable</code> again with other options replaces the schedule.
+<code>enable</code> and <code>status</code> show when popups can really arrive.
+Because of the jitter, that can be a little after the window's end; if it is,
+<code>enable</code> warns and suggests a smaller jitter or an earlier end.</p>
+<pre><code>$ shiver timer enable --every 1h --between 10:00-18:00
+wrote ~/.config/systemd/user/shiver.service
+wrote ~/.config/systemd/user/shiver.timer
+schedule: every 1h between 10:00-18:00, jitter 20m (popups 10:00-17:20)
+timer enabled; next popup: Wed 2026-11-18 11:07</code></pre>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li><code>shiver timer enable | disable | status</code></li>
+        <li><code>contrib/systemd/shiver.service</code> and <code>.timer</code></li>
+        <li>README section</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Per-weekday schedules</li>
+        <li>Shell hooks and context-aware picks (v1)</li>
+        <li>A daemon (v2)</li>
+        <li>Non-systemd systems</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Fixed slots plus a random delay, not “every 45 minutes since the last one”.</td>
+      <td>systemd can limit calendar slots to daytime hours; an interval timer can't. shiver turns the options into the slot list.</td></tr>
+  <tr><td>Jitter must be shorter than the interval.</td>
+      <td>Otherwise popups could bunch up or come out of order.</td></tr>
+  <tr><td>Popups running past the window's end give a warning, not an error.</td>
+      <td>It may be what you want; the warning makes sure you know.</td></tr>
+  <tr><td><code>enable</code> writes the binary's real path.</td>
+      <td>Works wherever shiver is installed; no path editing.</td></tr>
+  <tr><td>A custom packs folder given to <code>enable</code> (<code>--packs-dir</code> or <code>SHIVER_PACKS_DIR</code>) is written into the service.</td>
+      <td>The timer then uses the same packs you tested with.</td></tr>
+  <tr><td><code>enable</code> refuses to overwrite unit files it didn't write, unless <code>--force</code>.</td>
+      <td>Protects hand-edited timers.</td></tr>
+  <tr><td>A test checks the example files match what <code>enable</code> writes.</td>
+      <td>The two options can't drift apart.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Tests cover the schedule options and their errors, the unit files,
+    <code>enable</code>, <code>disable</code> and <code>status</code> (with a fake
+    <code>systemctl</code>).</li>
+  <li>You've run <code>shiver timer enable</code> on COSMIC, seen a popup arrive on
+    its own, and <code>disable</code> removed it.</li>
+  <li>CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

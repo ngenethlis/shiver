@@ -1,0 +1,7 @@
+# Example unit for shiver; see the README. Or run `shiver timer enable`.
+[Unit]
+Description=shiver: a random inner-voice popup
+
+[Service]
+Type=oneshot
+ExecStart=%h/.cargo/bin/shiver notify

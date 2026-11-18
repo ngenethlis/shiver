@@ -312,3 +312,327 @@ fn init_ignores_broken_packs() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stderr(&out), "");
 }
+
+/// A sandbox for `shiver timer`: a fake `systemctl` on `PATH` that logs its
+/// arguments, and a temporary config folder for the unit files.
+struct TimerEnv {
+    root: TempDir,
+}
+
+const FAKE_SYSTEMCTL: &str = r#"#!/bin/sh
+echo "$*" >> "$FAKE_SYSTEMCTL_LOG"
+case "$*" in
+  *is-active*)
+    if [ -n "$FAKE_ACTIVE" ]; then echo active; exit 0; fi
+    echo inactive; exit 3 ;;
+  *NextElapseUSecRealtime*) echo "Wed 2026-11-18 10:47:00 GMT" ;;
+  *"enable --now"*)
+    if [ -n "$FAKE_FAIL" ]; then echo "Failed to enable unit: boom" >&2; exit 1; fi ;;
+  *"disable --now"*)
+    if [ -n "$FAKE_NOT_LOADED" ]; then echo "Unit shiver.timer not loaded." >&2; exit 5; fi ;;
+esac
+exit 0
+"#;
+
+impl TimerEnv {
+    fn new() -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let script = bin.join("systemctl");
+        std::fs::write(&script, FAKE_SYSTEMCTL).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        TimerEnv { root }
+    }
+
+    fn units(&self) -> std::path::PathBuf {
+        self.root.path().join("config/systemd/user")
+    }
+
+    fn unit(&self, name: &str) -> String {
+        std::fs::read_to_string(self.units().join(name)).unwrap()
+    }
+
+    /// Commands the fake systemctl received, one per line.
+    fn log(&self) -> String {
+        std::fs::read_to_string(self.root.path().join("systemctl.log")).unwrap_or_default()
+    }
+
+    fn cmd(&self, args: &[&str]) -> Command {
+        let path = format!(
+            "{}:{}",
+            self.root.path().join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let mut cmd = shiver();
+        cmd.env("PATH", path)
+            .env("XDG_CONFIG_HOME", self.root.path().join("config"))
+            .env("FAKE_SYSTEMCTL_LOG", self.root.path().join("systemctl.log"))
+            .env_remove("FAKE_ACTIVE")
+            .env_remove("FAKE_FAIL")
+            .env_remove("FAKE_NOT_LOADED")
+            .args(args);
+        cmd
+    }
+
+    fn run(&self, args: &[&str]) -> Output {
+        self.cmd(args).output().unwrap()
+    }
+
+    /// Writes a unit file that shiver didn't write.
+    fn add_foreign(&self, name: &str) {
+        std::fs::create_dir_all(self.units()).unwrap();
+        std::fs::write(self.units().join(name), "[Timer]\nOnCalendar=daily\n").unwrap();
+    }
+}
+
+fn exe() -> String {
+    std::fs::canonicalize(env!("CARGO_BIN_EXE_shiver"))
+        .unwrap()
+        .display()
+        .to_string()
+}
+
+#[test]
+fn timer_enable_writes_units_and_starts_timer() {
+    let env = TimerEnv::new();
+    let out = env.run(&["timer", "enable"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        format!(
+            "wrote {}\nwrote {}\n\
+             schedule: every 45m between 09:00-21:00, jitter 20m (popups 09:00-20:35)\n\
+             timer enabled; next popup: Wed 2026-11-18 10:47:00 GMT\n",
+            env.units().join("shiver.service").display(),
+            env.units().join("shiver.timer").display(),
+        )
+    );
+    assert_eq!(stderr(&out), "");
+    assert!(
+        env.unit("shiver.service")
+            .contains(&format!("ExecStart={} notify\n", exe()))
+    );
+    assert!(
+        env.unit("shiver.timer")
+            .contains("RandomizedDelaySec=20m\n")
+    );
+    assert_eq!(
+        env.log(),
+        "--user daemon-reload\n\
+         --user enable --now shiver.timer\n\
+         --user show shiver.timer --property=NextElapseUSecRealtime --value\n"
+    );
+}
+
+#[test]
+fn timer_enable_writes_packs_dir() {
+    let env = TimerEnv::new();
+    let packs = Packs::new();
+    let out = env
+        .cmd(&["timer", "enable"])
+        .env("SHIVER_PACKS_DIR", packs.dir())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(env.unit("shiver.service").contains(&format!(
+        "ExecStart={} --packs-dir {} notify\n",
+        exe(),
+        packs.dir().display()
+    )));
+}
+
+#[test]
+fn timer_enable_refuses_foreign_units() {
+    let env = TimerEnv::new();
+    env.add_foreign("shiver.timer");
+    let out = env.run(&["timer", "enable"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        stderr(&out),
+        format!(
+            "shiver: {} wasn't written by shiver; use --force to replace it\n",
+            env.units().join("shiver.timer").display()
+        )
+    );
+    assert_eq!(env.unit("shiver.timer"), "[Timer]\nOnCalendar=daily\n");
+    assert!(!env.units().join("shiver.service").exists());
+    assert_eq!(env.log(), "");
+}
+
+#[test]
+fn timer_enable_force_replaces_foreign_units() {
+    let env = TimerEnv::new();
+    env.add_foreign("shiver.timer");
+    let out = env.run(&["timer", "enable", "--force"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        env.unit("shiver.timer")
+            .starts_with("# Written by `shiver timer enable`")
+    );
+}
+
+#[test]
+fn timer_enable_replaces_its_own_units() {
+    let env = TimerEnv::new();
+    assert!(env.run(&["timer", "enable"]).status.success());
+    let out = env.run(&["timer", "enable", "--every", "1h"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(env.unit("shiver.timer").contains("every 1h between"));
+}
+
+#[test]
+fn timer_enable_reports_systemctl_failure() {
+    let env = TimerEnv::new();
+    let out = env
+        .cmd(&["timer", "enable"])
+        .env("FAKE_FAIL", "1")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = stderr(&out);
+    assert!(
+        err.contains("`systemctl --user enable --now shiver.timer` failed"),
+        "{err}"
+    );
+    assert!(err.contains("boom"), "{err}");
+    assert!(
+        env.units().join("shiver.timer").exists(),
+        "files stay for a retry"
+    );
+}
+
+#[test]
+fn timer_enable_with_schedule_options() {
+    let env = TimerEnv::new();
+    let out = env.run(&[
+        "timer",
+        "enable",
+        "--every",
+        "1h",
+        "--between",
+        "08:00-18:00",
+        "--jitter",
+        "0m",
+    ]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stdout(&out)
+            .contains("schedule: every 1h between 08:00-18:00, jitter 0m (popups 08:00-17:00)\n")
+    );
+    let timer = env.unit("shiver.timer");
+    assert!(timer.contains("OnCalendar=*-*-* 08,09,10,11,12,13,14,15,16,17:00:00\n"));
+    assert_eq!(timer.matches("OnCalendar=").count(), 1);
+
+    for bad in [
+        &["--every", "4m"][..],
+        &["--jitter", "45m"],
+        &["--between", "09:00-09:00"],
+        &["--every", "soon"],
+        &["--between", "9-5"],
+    ] {
+        let mut args = vec!["timer", "enable"];
+        args.extend_from_slice(bad);
+        let out = env.run(&args);
+        assert_eq!(out.status.code(), Some(2), "{bad:?}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn timer_enable_warns_about_late_popups() {
+    let env = TimerEnv::new();
+    let out = env.run(&["timer", "enable", "--every", "50m", "--jitter", "30m"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stderr(&out),
+        "shiver: warning: popups can arrive until 21:10, after the window ends at 21:00 \
+         (last slot 20:40 + jitter 30m); use a smaller --jitter or an earlier end\n"
+    );
+    assert!(env.units().join("shiver.timer").exists());
+}
+
+#[test]
+fn timer_disable_removes_units() {
+    let env = TimerEnv::new();
+    assert!(env.run(&["timer", "enable"]).status.success());
+    let out = env.run(&["timer", "disable"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "timer disabled\n");
+    assert!(!env.units().join("shiver.timer").exists());
+    assert!(!env.units().join("shiver.service").exists());
+    assert!(
+        env.log()
+            .ends_with("--user disable --now shiver.timer\n--user daemon-reload\n"),
+        "{}",
+        env.log()
+    );
+}
+
+#[test]
+fn timer_disable_when_not_installed() {
+    let env = TimerEnv::new();
+    let out = env
+        .cmd(&["timer", "disable"])
+        .env("FAKE_NOT_LOADED", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "timer disabled\n");
+    assert_eq!(env.log(), "--user disable --now shiver.timer\n");
+}
+
+#[test]
+fn timer_disable_keeps_foreign_units() {
+    let env = TimerEnv::new();
+    env.add_foreign("shiver.timer");
+    let out = env.run(&["timer", "disable"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("wasn't written by shiver; left in place"));
+    assert!(env.units().join("shiver.timer").exists());
+}
+
+#[test]
+fn timer_status_enabled() {
+    let env = TimerEnv::new();
+    assert!(
+        env.run(&["timer", "enable", "--between", "22:00-02:00"])
+            .status
+            .success()
+    );
+    let out = env
+        .cmd(&["timer", "status"])
+        .env("FAKE_ACTIVE", "1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        "schedule: every 45m between 22:00-02:00, jitter 20m (popups 22:00-02:05)\n\
+         timer enabled; next popup: Wed 2026-11-18 10:47:00 GMT\n"
+    );
+}
+
+#[test]
+fn timer_status_custom_schedule() {
+    let env = TimerEnv::new();
+    env.add_foreign("shiver.timer");
+    let out = env
+        .cmd(&["timer", "status"])
+        .env("FAKE_ACTIVE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        stdout(&out).starts_with("schedule: custom\n"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn timer_status_not_enabled() {
+    let env = TimerEnv::new();
+    let out = env.run(&["timer", "status"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stdout(&out), "timer not enabled\n");
+}

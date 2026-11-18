@@ -1,0 +1,16 @@
+# Example unit for shiver; see the README. Or run `shiver timer enable`.
+# Schedule: every 45m between 09:00-21:00, jitter 20m
+[Unit]
+Description=shiver: a random popup every 45m between 09:00-21:00
+
+[Timer]
+OnCalendar=*-*-* 09,12,15,18:00:00
+OnCalendar=*-*-* 11,14,17,20:15:00
+OnCalendar=*-*-* 10,13,16,19:30:00
+OnCalendar=*-*-* 09,12,15,18:45:00
+RandomizedDelaySec=20m
+AccuracySec=1min
+Persistent=false
+
+[Install]
+WantedBy=timers.target
