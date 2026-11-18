@@ -1,7 +1,7 @@
 ---
 id: 0009
 name: default-icon
-status: in-progress
+status: done
 created: 2026-11-18
 ---
 
@@ -43,7 +43,7 @@ icon: ...` and the notification has no icon.
 **Acceptance:**
 - [x] Test `notify::tests::uses_default_icon_without_voice_icon` passes.
 - [x] Test `notify::tests::voice_icon_beats_default` passes.
-- [ ] Manual: on COSMIC, `shiver notify` with the default pack shows the
+- [x] Manual: on COSMIC, `shiver notify` with the default pack shows the
       Signal Flame.
 
 ### R4: Docs

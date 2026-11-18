@@ -7,7 +7,7 @@
 - [x] 5. Tests, including snippets run in real zsh and bash (R1–R4)
 - [x] 6. README (R5)
 - [x] 7. All checks pass; tick acceptance criteria
-- [ ] 8. User tries the hook in their shell (R5)
+- [x] 8. User tries the hook in their shell (R5)
 
 ## Notes
 
@@ -27,3 +27,8 @@
   `cli::notify_reports_unreachable_notification_server`,
   `cli::on_fail_reports_unreachable_notification_server`.
 - 155 tests.
+- 2026-11-18: checked by the user in zsh with powerlevel10k: `ls nonex` gave a
+  popup with sound. It first stayed silent because the installed default pack
+  predated the `fail` lines (`shiver init --force` fixed it; backlog has the
+  pack-update item). Also verified that another precmd hook running first
+  doesn't hide the exit status from ours.

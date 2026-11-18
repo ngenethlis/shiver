@@ -25,7 +25,9 @@ impl Output for Notify {
         let mut n = Notification::new();
         n.appname("shiver").summary(&f.summary).body(&f.body);
         if let Some(icon) = &f.icon {
-            n.icon(icon);
+            // The spec wants a file:// URI for the app icon; many servers
+            // (e.g. COSMIC) show the `image-path` hint instead, so send both.
+            n.icon(icon).image_path(icon);
         }
         n.show().context("couldn't send the notification")?;
         Ok(())
@@ -45,12 +47,21 @@ fn fields(i: &Interjection, default_icon: Option<&Path>) -> Fields {
     Fields {
         summary: i.voice.display.clone(),
         body: i.text.clone(),
-        icon: i
-            .icon
-            .as_deref()
-            .or(default_icon)
-            .map(|p| p.to_string_lossy().into_owned()),
+        icon: i.icon.as_deref().or(default_icon).map(file_uri),
     }
+}
+
+/// `/a b/c.png` → `file:///a%20b/c.png`.
+fn file_uri(path: &Path) -> String {
+    let mut uri = String::from("file://");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
 }
 
 /// Builds a one-off interjection for `notify --voice V --text TEXT`.
@@ -106,7 +117,7 @@ mod tests {
             Fields {
                 summary: "DRIFT".into(),
                 body: "Close a tab or two.".into(),
-                icon: Some(dir.path().join("p/drift.png").to_string_lossy().into()),
+                icon: Some(file_uri(&dir.path().join("p/drift.png"))),
             }
         );
     }
@@ -116,7 +127,10 @@ mod tests {
         let (_dir, chorus) = sample_chorus();
         let i = one_off(&chorus, "Build Bot", "Tests passed.", None);
         let f = fields(&i, Some(Path::new("/data/shiver/icons/shiver.png")));
-        assert_eq!(f.icon.as_deref(), Some("/data/shiver/icons/shiver.png"));
+        assert_eq!(
+            f.icon.as_deref(),
+            Some("file:///data/shiver/icons/shiver.png")
+        );
     }
 
     #[test]
@@ -132,14 +146,20 @@ mod tests {
     }
 
     #[test]
+    fn icons_are_file_uris() {
+        assert_eq!(file_uri(Path::new("/a/b.png")), "file:///a/b.png");
+        assert_eq!(
+            file_uri(Path::new("/my icons/ünï.png")),
+            "file:///my%20icons/%C3%BCn%C3%AF.png"
+        );
+    }
+
+    #[test]
     fn voice_icon_beats_default() {
         let (dir, chorus) = sample_chorus();
         let i = one_off(&chorus, "drift", "Hi.", None);
         let f = fields(&i, Some(Path::new("/data/shiver/icons/shiver.png")));
-        assert_eq!(
-            f.icon,
-            Some(dir.path().join("p/drift.png").to_string_lossy().into())
-        );
+        assert_eq!(f.icon, Some(file_uri(&dir.path().join("p/drift.png"))));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 ---
 id: 0010
 name: shell-hook
-status: in-progress
+status: done
 created: 2026-11-18
 ---
 
@@ -97,7 +97,7 @@ table.
 
 **Acceptance:**
 - [x] Review: README updated.
-- [ ] Manual: with the hook in the user's shell, a failing command (e.g.
+- [x] Manual: with the hook in the user's shell, a failing command (e.g.
       `cargo build` in an empty folder) shows a `fail` popup.
 
 ## Out of scope
