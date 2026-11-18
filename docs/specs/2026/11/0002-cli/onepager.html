@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0002: The shiver command</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0002</span>: The shiver command</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p><code>shiver-core</code> can load packs and pick a line, but there's no way to
+use it yet. v0 needs a command that prints a line in the terminal, shows it as a
+desktop notification with a sound, and lists what's installed.</p>
+
+<h2>Proposal</h2>
+<p>Add the <code>shiver</code> binary with three commands:</p>
+<ul>
+  <li><strong><code>shiver say</code></strong> prints a random line in a speech box, with
+    the voice name in the voice's colour when the terminal supports it.
+<pre><code> RESOLVE
+╭──────────────────────────────────────╮
+│ You've been staring at this bug for  │
+│ an hour. Stand up.                   │
+╰──────────────────────────────────────╯</code></pre></li>
+  <li><strong><code>shiver notify</code></strong> shows a random line as a desktop
+    notification (voice name as the title, the line as the body, the voice's icon)
+    and plays its sound. <code>--no-sound</code> skips the sound.
+    <code>--text "..."</code> with <code>--voice</code> sends a one-off message
+    instead of a random line.</li>
+  <li><strong><code>shiver list</code></strong> shows each pack with its folder, voices
+    and number of lines.</li>
+</ul>
+<p><code>say</code> and <code>notify</code> both take <code>--voice</code> and
+<code>--tag</code> to narrow the pick. Packs come from
+<code>~/.config/shiver/packs</code>; <code>--packs-dir</code> or
+<code>SHIVER_PACKS_DIR</code> point elsewhere. Pack warnings are printed to the
+error output on every run, so problems get noticed.</p>
+<p>Each way of showing a line (terminal, notification, sound) is its own small
+module, so the overlay planned for v2 can be added beside them.</p>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out (later specs)</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li><code>say</code>, <code>notify</code>, <code>list</code></li>
+        <li>Finding the packs folder</li>
+        <li>Speech box with wrapping and colour</li>
+        <li>Notifications over D-Bus</li>
+        <li>Sound via <code>pw-play</code>, falling back to <code>paplay</code></li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>systemd timer for random popups</li>
+        <li>An example pack in the repo</li>
+        <li>Shell hooks and context-aware picks</li>
+        <li>Cooldowns, config file, overlay</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td><code>say</code> prints a speech box; text wraps at 60 columns.</td>
+      <td>Readable in any terminal size, and the box stays compact.</td></tr>
+  <tr><td>Colour only when printing to a terminal and <code>NO_COLOR</code> isn't set.</td>
+      <td>Piped output stays clean; respects the common <code>NO_COLOR</code> convention.</td></tr>
+  <tr><td>One-off <code>--text</code> with an unknown voice uses that name as is.</td>
+      <td>Scripts can send a message without making a pack.</td></tr>
+  <tr><td>Sound plays in the background and shiver doesn't wait for it.</td>
+      <td>The notification is never delayed by audio.</td></tr>
+  <tr><td>No sound player found, or the sound file is missing: a warning, but the notification still shows.</td>
+      <td>Sound is a bonus; it shouldn't break the popup.</td></tr>
+  <tr><td>No packs or no matching line: <code>say</code> and <code>notify</code> fail with a clear message; <code>list</code> just says there are none.</td>
+      <td>A timer or script can see that nothing was shown.</td></tr>
+  <tr><td>Notifications use plain text and the desktop's default timeout.</td>
+      <td>Markup and timeouts vary between desktops.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Automated tests cover <code>say</code>, <code>list</code>, the packs-folder
+    options, warnings, error messages, the speech box and the sound fallback.</li>
+  <li>You've run <code>shiver notify</code> on COSMIC and seen the notification and
+    heard the sound (notifications can't be tested automatically).</li>
+  <li><code>fmt</code>, <code>clippy</code> and tests are clean.</li>
+</ul>
+
+</main>
+</body>
+</html>
