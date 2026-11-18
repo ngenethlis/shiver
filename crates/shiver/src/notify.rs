@@ -1,6 +1,6 @@
 //! Desktop notifications over the freedesktop notification spec.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use notify_rust::Notification;
@@ -12,7 +12,13 @@ pub struct Notify;
 
 impl Output for Notify {
     fn emit(&self, interjection: &Interjection) -> anyhow::Result<()> {
-        let f = fields(interjection);
+        // Only install the default icon when it's needed.
+        let default = if interjection.icon.is_none() {
+            crate::icon::default_icon()
+        } else {
+            None
+        };
+        let f = fields(interjection, default.as_deref());
         let mut n = Notification::new();
         n.appname("shiver").summary(&f.summary).body(&f.body);
         if let Some(icon) = &f.icon {
@@ -31,11 +37,16 @@ struct Fields {
     icon: Option<String>,
 }
 
-fn fields(i: &Interjection) -> Fields {
+/// The notification's fields; `default_icon` is used when the voice has none.
+fn fields(i: &Interjection, default_icon: Option<&Path>) -> Fields {
     Fields {
         summary: i.voice.display.clone(),
         body: i.text.clone(),
-        icon: i.icon.as_ref().map(|p| p.to_string_lossy().into_owned()),
+        icon: i
+            .icon
+            .as_deref()
+            .or(default_icon)
+            .map(|p| p.to_string_lossy().into_owned()),
     }
 }
 
@@ -88,12 +99,31 @@ mod tests {
         let (dir, chorus) = sample_chorus();
         let i = one_off(&chorus, "drift", "Close a tab or two.", None);
         assert_eq!(
-            fields(&i),
+            fields(&i, None),
             Fields {
                 summary: "DRIFT".into(),
                 body: "Close a tab or two.".into(),
                 icon: Some(dir.path().join("p/drift.png").to_string_lossy().into()),
             }
+        );
+    }
+
+    #[test]
+    fn uses_default_icon_without_voice_icon() {
+        let (_dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "Build Bot", "Tests passed.", None);
+        let f = fields(&i, Some(Path::new("/data/shiver/icons/shiver.png")));
+        assert_eq!(f.icon.as_deref(), Some("/data/shiver/icons/shiver.png"));
+    }
+
+    #[test]
+    fn voice_icon_beats_default() {
+        let (dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "drift", "Hi.", None);
+        let f = fields(&i, Some(Path::new("/data/shiver/icons/shiver.png")));
+        assert_eq!(
+            f.icon,
+            Some(dir.path().join("p/drift.png").to_string_lossy().into())
         );
     }
 
@@ -113,7 +143,7 @@ mod tests {
         assert_eq!(i.voice.display, "Build Bot");
         assert_eq!(i.sound, None);
         assert_eq!(i.icon, None);
-        assert_eq!(fields(&i).icon, None);
+        assert_eq!(fields(&i, None).icon, None);
     }
 
     #[test]

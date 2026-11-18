@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0009: Default notification icon</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0009</span>: Default notification icon</h1>
+<p class="meta">Created 2026-11-18 · <span class="status">in-progress</span></p>
+
+<h2>Problem</h2>
+<p>Voices without their own icon, which includes every voice in the default
+pack, show notifications with no icon or a generic one. shiver now has a logo,
+the Signal Flame, and notifications should carry it.</p>
+
+<h2>Proposal</h2>
+<ul>
+  <li>The 128×128 Signal Flame icon from <code>assets/logo/</code> is compiled into
+    the binary.</li>
+  <li>The first time a notification needs it, shiver writes it to
+    <code>~/.local/share/shiver/icons/shiver.png</code> (and rewrites it if a newer
+    shiver ships a different icon).</li>
+  <li>Any notification whose voice has no icon uses it, including one-off
+    <code>--text</code> messages. Voices with their own icon keep it.</li>
+</ul>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>Embedding and installing the icon</li>
+        <li>Using it as the fallback notification icon</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Turning the default icon off (config file)</li>
+        <li>Installing into the desktop's icon theme or a <code>.desktop</code> file</li>
+        <li>Publishing to crates.io (the icon lives outside the crate; see backlog)</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Compiled in, written out on demand.</td>
+      <td>Notification servers need a file path or a themed icon name; this works for <code>cargo install</code> with no extra setup step.</td></tr>
+  <tr><td>128×128.</td>
+      <td>Notifications show icons at 48–64 px, so 128 covers HiDPI and adds only ~12 KB to the binary.</td></tr>
+  <tr><td>If writing the icon fails, warn and show the notification without it.</td>
+      <td>An icon is never worth a failed popup.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>Tests cover installing, reusing and updating the icon file, and the fallback.</li>
+  <li>You see the Signal Flame on a <code>shiver notify</code> on COSMIC.</li>
+  <li>All CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

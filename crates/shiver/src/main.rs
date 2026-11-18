@@ -2,6 +2,7 @@
 //! desktop notification.
 
 mod history;
+mod icon;
 mod init;
 mod notify;
 mod output;

@@ -45,7 +45,9 @@ Rough priority within each section: top first.
 ## Tooling and release
 
 - Publish to crates.io (`shiver` was free as of 2026-11-17) and add release
-  builds or distro packages.
+  builds or distro packages. Before publishing, the default icon must move
+  into the `shiver` crate (or be copied in by a build step): it's embedded from
+  `assets/logo/`, outside the crate, which `cargo package` won't include.
 - A CI job that builds on the minimum Rust version (1.89) to keep
   `rust-version` honest.
 - Spec checker: verify that tests named in acceptance criteria exist.
