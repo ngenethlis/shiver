@@ -6,7 +6,7 @@ use rand::Rng;
 use rand::distr::Distribution;
 use rand::distr::weighted::WeightedIndex;
 
-use crate::library::Library;
+use crate::chorus::Chorus;
 use crate::pack::Voice;
 
 /// Which lines may be picked. Empty fields match everything.
@@ -31,7 +31,7 @@ pub struct Interjection {
     pub icon: Option<PathBuf>,
 }
 
-impl Library {
+impl Chorus {
     /// Picks a random line matching `filter`, weighted by each line's weight.
     ///
     /// Returns `None` if no line matches.
@@ -67,7 +67,7 @@ mod tests {
     use crate::test_util::Packs;
 
     /// Two voices; `drift` has two lines (one tagged `late`), `ember` has one.
-    fn library() -> (Packs, Library) {
+    fn sample_chorus() -> (Packs, Chorus) {
         let packs = Packs::new();
         packs.add(
             "p",
@@ -77,9 +77,9 @@ mod tests {
              [[lines]]\nvoice = \"drift\"\ntext = \"Look out the window.\"\ntags = [\"idle\"]\n\
              [[lines]]\nvoice = \"ember\"\ntext = \"Still awake?\"\ntags = [\"late\"]\n",
         );
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
-        (packs, lib)
+        (packs, chorus)
     }
 
     fn filter(voice: Option<&str>, tag: Option<&str>) -> Filter {
@@ -90,10 +90,10 @@ mod tests {
     }
 
     /// Every text that `filter` can produce over many seeded picks.
-    fn texts(lib: &Library, f: &Filter) -> Vec<String> {
+    fn texts(chorus: &Chorus, f: &Filter) -> Vec<String> {
         let mut rng = StdRng::seed_from_u64(7);
         let mut seen: Vec<String> = (0..200)
-            .filter_map(|_| lib.pick(f, &mut rng))
+            .filter_map(|_| chorus.pick(f, &mut rng))
             .map(|i| i.text)
             .collect();
         seen.sort();
@@ -103,57 +103,57 @@ mod tests {
 
     #[test]
     fn filters_by_voice() {
-        let (_p, lib) = library();
+        let (_p, chorus) = sample_chorus();
         assert_eq!(
-            texts(&lib, &filter(Some("drift"), None)),
+            texts(&chorus, &filter(Some("drift"), None)),
             ["Lights off soon.", "Look out the window."]
         );
     }
 
     #[test]
     fn filters_by_tag() {
-        let (_p, lib) = library();
+        let (_p, chorus) = sample_chorus();
         assert_eq!(
-            texts(&lib, &filter(None, Some("late"))),
+            texts(&chorus, &filter(None, Some("late"))),
             ["Lights off soon.", "Still awake?"]
         );
     }
 
     #[test]
     fn filters_by_voice_and_tag() {
-        let (_p, lib) = library();
+        let (_p, chorus) = sample_chorus();
         assert_eq!(
-            texts(&lib, &filter(Some("drift"), Some("late"))),
+            texts(&chorus, &filter(Some("drift"), Some("late"))),
             ["Lights off soon."]
         );
     }
 
     #[test]
     fn no_filter_matches_everything() {
-        let (_p, lib) = library();
-        assert_eq!(texts(&lib, &Filter::default()).len(), 3);
+        let (_p, chorus) = sample_chorus();
+        assert_eq!(texts(&chorus, &Filter::default()).len(), 3);
     }
 
     #[test]
     fn no_match_returns_none() {
-        let (_p, lib) = library();
+        let (_p, chorus) = sample_chorus();
         let mut rng = StdRng::seed_from_u64(1);
         assert_eq!(
-            lib.pick(&filter(Some("ember"), Some("idle")), &mut rng),
+            chorus.pick(&filter(Some("ember"), Some("idle")), &mut rng),
             None
         );
-        assert_eq!(lib.pick(&filter(Some("ghost"), None), &mut rng), None);
-        assert_eq!(lib.pick(&filter(None, Some("nope")), &mut rng), None);
-        assert_eq!(Library::default().pick(&Filter::default(), &mut rng), None);
+        assert_eq!(chorus.pick(&filter(Some("ghost"), None), &mut rng), None);
+        assert_eq!(chorus.pick(&filter(None, Some("nope")), &mut rng), None);
+        assert_eq!(Chorus::default().pick(&Filter::default(), &mut rng), None);
     }
 
     #[test]
     fn same_seed_same_pick() {
-        let (_p, lib) = library();
+        let (_p, chorus) = sample_chorus();
         let picks = |seed| {
             let mut rng = StdRng::seed_from_u64(seed);
             (0..20)
-                .map(|_| lib.pick(&Filter::default(), &mut rng).unwrap().text)
+                .map(|_| chorus.pick(&Filter::default(), &mut rng).unwrap().text)
                 .collect::<Vec<_>>()
         };
         assert_eq!(picks(42), picks(42));
@@ -161,9 +161,9 @@ mod tests {
 
     #[test]
     fn interjection_carries_voice() {
-        let (_p, lib) = library();
+        let (_p, chorus) = sample_chorus();
         let mut rng = StdRng::seed_from_u64(3);
-        let i = lib
+        let i = chorus
             .pick(&filter(Some("drift"), Some("late")), &mut rng)
             .unwrap();
         assert_eq!(i.voice.key, "drift");
@@ -180,12 +180,12 @@ mod tests {
              [[lines]]\nvoice = \"drift\"\ntext = \"rare\"\nweight = 1\n\
              [[lines]]\nvoice = \"drift\"\ntext = \"common\"\nweight = 9\n",
         );
-        let (lib, _) = Library::load(packs.dir()).unwrap();
+        let (chorus, _) = Chorus::load(packs.dir()).unwrap();
         let mut rng = StdRng::seed_from_u64(2026);
 
         let picks = 10_000;
         let common = (0..picks)
-            .filter(|_| lib.pick(&Filter::default(), &mut rng).unwrap().text == "common")
+            .filter(|_| chorus.pick(&Filter::default(), &mut rng).unwrap().text == "common")
             .count();
 
         let share = common as f64 / picks as f64;
@@ -205,13 +205,13 @@ mod tests {
         for f in ["voice.ogg", "line.ogg", "drift.png"] {
             std::fs::write(dir.join(f), b"").unwrap();
         }
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
 
         let mut rng = StdRng::seed_from_u64(5);
         let mut seen = 0;
         while seen != 0b11 {
-            let i = lib.pick(&Filter::default(), &mut rng).unwrap();
+            let i = chorus.pick(&Filter::default(), &mut rng).unwrap();
             assert_eq!(i.icon, Some(dir.join("drift.png")));
             match i.text.as_str() {
                 "own" => {

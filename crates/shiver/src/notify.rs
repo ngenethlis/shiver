@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use notify_rust::Notification;
-use shiver_core::{Interjection, Library, Voice};
+use shiver_core::{Chorus, Interjection, Voice};
 
 use crate::output::Output;
 
@@ -43,8 +43,8 @@ fn fields(i: &Interjection) -> Fields {
 ///
 /// A loaded voice supplies its display name, icon and sound; an unknown `voice`
 /// is used as the display name. `sound` overrides the voice's sound.
-pub fn one_off(library: &Library, voice: &str, text: &str, sound: Option<PathBuf>) -> Interjection {
-    let voice = library.voice(voice).cloned().unwrap_or_else(|| Voice {
+pub fn one_off(chorus: &Chorus, voice: &str, text: &str, sound: Option<PathBuf>) -> Interjection {
+    let voice = chorus.voice(voice).cloned().unwrap_or_else(|| Voice {
         key: voice.to_owned(),
         display: voice.to_owned(),
         color: None,
@@ -65,8 +65,8 @@ mod tests {
 
     use super::*;
 
-    /// A library with voice `drift` that has an icon and a sound.
-    fn library() -> (tempfile::TempDir, Library) {
+    /// A chorus with voice `drift` that has an icon and a sound.
+    fn sample_chorus() -> (tempfile::TempDir, Chorus) {
         let dir = tempfile::tempdir().unwrap();
         let pack = dir.path().join("p");
         std::fs::create_dir(&pack).unwrap();
@@ -77,15 +77,15 @@ mod tests {
         .unwrap();
         std::fs::write(pack.join("drift.ogg"), b"").unwrap();
         std::fs::write(pack.join("drift.png"), b"").unwrap();
-        let (lib, warnings) = Library::load(dir.path()).unwrap();
+        let (chorus, warnings) = Chorus::load(dir.path()).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
-        (dir, lib)
+        (dir, chorus)
     }
 
     #[test]
     fn builds_fields() {
-        let (dir, lib) = library();
-        let i = one_off(&lib, "drift", "Close a tab or two.", None);
+        let (dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "drift", "Close a tab or two.", None);
         assert_eq!(
             fields(&i),
             Fields {
@@ -98,8 +98,8 @@ mod tests {
 
     #[test]
     fn one_off_uses_known_voice() {
-        let (dir, lib) = library();
-        let i = one_off(&lib, "drift", "Hello.", None);
+        let (dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "drift", "Hello.", None);
         assert_eq!(i.voice.display, "DRIFT");
         assert_eq!(i.sound, Some(dir.path().join("p/drift.ogg")));
         assert_eq!(i.icon, Some(dir.path().join("p/drift.png")));
@@ -107,8 +107,8 @@ mod tests {
 
     #[test]
     fn one_off_unknown_voice_uses_name() {
-        let (_dir, lib) = library();
-        let i = one_off(&lib, "Build Bot", "Tests passed.", None);
+        let (_dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "Build Bot", "Tests passed.", None);
         assert_eq!(i.voice.display, "Build Bot");
         assert_eq!(i.sound, None);
         assert_eq!(i.icon, None);
@@ -117,8 +117,8 @@ mod tests {
 
     #[test]
     fn one_off_sound_overrides_voice() {
-        let (_dir, lib) = library();
-        let i = one_off(&lib, "drift", "Ding.", Some("/tmp/ding.ogg".into()));
+        let (_dir, chorus) = sample_chorus();
+        let i = one_off(&chorus, "drift", "Ding.", Some("/tmp/ding.ogg".into()));
         assert_eq!(i.sound.as_deref(), Some(Path::new("/tmp/ding.ogg")));
     }
 }

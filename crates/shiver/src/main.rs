@@ -14,7 +14,7 @@ use anyhow::{Context, bail};
 use clap::{Args, Parser, Subcommand};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use shiver_core::{Filter, Interjection, Library};
+use shiver_core::{Chorus, Filter, Interjection};
 
 use crate::output::Output;
 
@@ -112,7 +112,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (library, warnings) = Library::load(&dir)?;
+    let (chorus, warnings) = Chorus::load(&dir)?;
     for warning in &warnings {
         output::warn(warning);
     }
@@ -127,21 +127,21 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 voice: args.voice,
                 tag: args.tag,
             };
-            let line = pick(&library, &dir, &filter, &mut rng)?;
+            let line = pick(&chorus, &dir, &filter, &mut rng)?;
             stdout::Stdout::detect().emit(&line)
         }
         Command::Notify(args) => {
             let line = match args.text {
                 Some(text) => {
                     let voice = args.voice.expect("clap requires --voice with --text");
-                    notify::one_off(&library, &voice, &text, args.sound)
+                    notify::one_off(&chorus, &voice, &text, args.sound)
                 }
                 None => {
                     let filter = Filter {
                         voice: args.voice,
                         tag: args.tag,
                     };
-                    pick(&library, &dir, &filter, &mut rng)?
+                    pick(&chorus, &dir, &filter, &mut rng)?
                 }
             };
             notify::Notify.emit(&line)?;
@@ -151,30 +151,30 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
         Command::List => {
-            print!("{}", list(&library, &dir));
+            print!("{}", list(&chorus, &dir));
             Ok(())
         }
-        Command::Init { .. } => unreachable!("handled before loading the library"),
+        Command::Init { .. } => unreachable!("handled before loading the chorus"),
     }
 }
 
 fn pick(
-    library: &Library,
+    chorus: &Chorus,
     dir: &Path,
     filter: &Filter,
     rng: &mut StdRng,
 ) -> anyhow::Result<Interjection> {
-    if library.packs().is_empty() {
+    if chorus.packs().is_empty() {
         bail!("no packs found in {}; {INIT_HINT}", dir.display());
     }
-    library.pick(filter, rng).context("no matching lines")
+    chorus.pick(filter, rng).context("no matching lines")
 }
 
-fn list(library: &Library, dir: &Path) -> String {
-    if library.packs().is_empty() {
+fn list(chorus: &Chorus, dir: &Path) -> String {
+    if chorus.packs().is_empty() {
         return format!("no packs found in {}\n{INIT_HINT}\n", dir.display());
     }
-    let blocks: Vec<String> = library
+    let blocks: Vec<String> = chorus
         .packs()
         .iter()
         .map(|p| {

@@ -1,4 +1,4 @@
-//! Loading every pack in a folder into one library.
+//! Loading every pack in a folder into one chorus.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -9,7 +9,7 @@ use crate::pack::{self, Line, Voice};
 
 /// All loaded voices and lines, merged across packs.
 #[derive(Debug, Default)]
-pub struct Library {
+pub struct Chorus {
     pub(crate) voices: BTreeMap<String, Voice>,
     pub(crate) lines: Vec<Line>,
     packs: Vec<PackSummary>,
@@ -63,16 +63,16 @@ struct Loaded {
     pack: pack::Pack,
 }
 
-impl Library {
+impl Chorus {
     /// Loads every pack in `dir`: each subfolder containing a `pack.toml`.
     ///
     /// Packs load in folder-name order. Anything broken is skipped and reported
-    /// in the returned warnings. A missing `dir` gives an empty library.
-    pub fn load(dir: &Path) -> Result<(Library, Vec<Warning>), LoadError> {
+    /// in the returned warnings. A missing `dir` gives an empty chorus.
+    pub fn load(dir: &Path) -> Result<(Chorus, Vec<Warning>), LoadError> {
         let mut warnings = Vec::new();
         let loaded = read_packs(dir, &mut warnings)?;
 
-        let mut library = Library::default();
+        let mut chorus = Chorus::default();
         let mut summaries: Vec<PackSummary> = loaded
             .iter()
             .map(|l| PackSummary {
@@ -100,23 +100,22 @@ impl Library {
                 let voice = check_voice(voice.clone(), &l.file, &mut warnings);
                 owner.insert(voice.key.clone(), l.pack.name.clone());
                 summary.voices.push(voice.key.clone());
-                library.voices.insert(voice.key.clone(), voice);
+                chorus.voices.insert(voice.key.clone(), voice);
             }
         }
 
         for (l, summary) in loaded.iter().zip(&mut summaries) {
             for (i, line) in l.pack.lines.iter().enumerate() {
-                if let Some(line) =
-                    check_line(line.clone(), i + 1, &library, &l.file, &mut warnings)
+                if let Some(line) = check_line(line.clone(), i + 1, &chorus, &l.file, &mut warnings)
                 {
-                    library.lines.push(line);
+                    chorus.lines.push(line);
                     summary.lines += 1;
                 }
             }
         }
 
-        library.packs = summaries;
-        Ok((library, warnings))
+        chorus.packs = summaries;
+        Ok((chorus, warnings))
     }
 
     /// The loaded packs, in folder order.
@@ -206,12 +205,12 @@ fn check_voice(mut voice: Voice, file: &Path, warnings: &mut Vec<Warning>) -> Vo
 fn check_line(
     mut line: Line,
     number: usize,
-    library: &Library,
+    chorus: &Chorus,
     file: &Path,
     warnings: &mut Vec<Warning>,
 ) -> Option<Line> {
     let what = format!("line {number}");
-    let problem = if !library.voices.contains_key(&line.voice) {
+    let problem = if !chorus.voices.contains_key(&line.voice) {
         Some(format!("unknown voice `{}`", line.voice))
     } else if line.text.is_empty() {
         Some("text is empty".to_owned())
@@ -295,21 +294,21 @@ mod tests {
             "[voices.ember]\n[[lines]]\nvoice = \"ember\"\ntext = \"A\"\n",
         );
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
         assert!(warnings.is_empty(), "{warnings:?}");
-        let names: Vec<_> = lib.packs().iter().map(|p| p.name.as_str()).collect();
+        let names: Vec<_> = chorus.packs().iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["a-first", "b-second"]);
-        let texts: Vec<_> = lib.lines().iter().map(|l| l.text.as_str()).collect();
+        let texts: Vec<_> = chorus.lines().iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts, ["A", "B"]);
     }
 
     #[test]
     fn missing_dir_is_empty() {
         let packs = Packs::new();
-        let (lib, warnings) = Library::load(&packs.dir().join("nope")).unwrap();
-        assert!(lib.packs().is_empty());
-        assert!(lib.lines.is_empty());
+        let (chorus, warnings) = Chorus::load(&packs.dir().join("nope")).unwrap();
+        assert!(chorus.packs().is_empty());
+        assert!(chorus.lines.is_empty());
         assert!(warnings.is_empty());
     }
 
@@ -319,7 +318,7 @@ mod tests {
         let file = packs.dir().join("not-a-folder");
         std::fs::write(&file, "").unwrap();
         assert!(matches!(
-            Library::load(&file),
+            Chorus::load(&file),
             Err(LoadError::ReadDir { .. })
         ));
     }
@@ -331,9 +330,9 @@ mod tests {
         std::fs::create_dir(&folder).unwrap();
         std::fs::write(packs.dir().join("notes.txt"), "loose file").unwrap();
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert!(lib.packs().is_empty());
+        assert!(chorus.packs().is_empty());
         assert_one_warning(&warnings, &folder, "no pack.toml");
     }
 
@@ -346,10 +345,10 @@ mod tests {
             &format!("{VOICE}[[lines]]\nvoice = \"drift\"\ntext = \"Fine.\"\n"),
         );
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert_eq!(lib.packs().len(), 1);
-        assert_eq!(lib.packs()[0].name, "good");
+        assert_eq!(chorus.packs().len(), 1);
+        assert_eq!(chorus.packs()[0].name, "good");
         assert_one_warning(&warnings, &bad, "invalid pack");
     }
 
@@ -358,9 +357,9 @@ mod tests {
         let packs = Packs::new();
         let bad = packs.add("bad", "this is = = not toml");
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert!(lib.packs().is_empty());
+        assert!(chorus.packs().is_empty());
         assert_one_warning(&warnings, &bad, "invalid pack");
     }
 
@@ -375,10 +374,10 @@ mod tests {
             ),
         );
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert_eq!(lib.lines.len(), 1);
-        assert_eq!(lib.lines[0].text, "Kept.");
+        assert_eq!(chorus.lines.len(), 1);
+        assert_eq!(chorus.lines[0].text, "Kept.");
         assert_one_warning(&warnings, &file, "line 1: unknown voice `ghost`");
     }
 
@@ -390,10 +389,10 @@ mod tests {
             &format!("{VOICE}[[lines]]\nvoice = \"drift\"\ntext = \"  \"\n"),
         );
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert!(lib.lines.is_empty());
-        assert_eq!(lib.packs()[0].lines, 0);
+        assert!(chorus.lines.is_empty());
+        assert_eq!(chorus.packs()[0].lines, 0);
         assert_one_warning(&warnings, &file, "text is empty");
     }
 
@@ -408,9 +407,12 @@ mod tests {
                 ),
             );
 
-            let (lib, warnings) = Library::load(packs.dir()).unwrap();
+            let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-            assert!(lib.lines.is_empty(), "weight {weight} should be rejected");
+            assert!(
+                chorus.lines.is_empty(),
+                "weight {weight} should be rejected"
+            );
             assert_one_warning(&warnings, &file, "weight");
         }
     }
@@ -420,9 +422,9 @@ mod tests {
         let packs = Packs::new();
         let file = packs.add("p", "[voices.drift]\ncolor = \"purple\"\n");
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        let voice = lib.voice("drift").expect("voice still loads");
+        let voice = chorus.voice("drift").expect("voice still loads");
         assert_eq!(voice.color, None);
         assert_one_warning(&warnings, &file, "color `purple`");
     }
@@ -431,10 +433,10 @@ mod tests {
     fn keeps_valid_color() {
         let packs = Packs::new();
         packs.add("p", "[voices.drift]\ncolor = \"#A1b2C3\"\n");
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(
-            lib.voice("drift").unwrap().color.as_deref(),
+            chorus.voice("drift").unwrap().color.as_deref(),
             Some("#A1b2C3")
         );
     }
@@ -449,12 +451,12 @@ mod tests {
              [[lines]]\nvoice = \"ember\"\ntext = \"Still here.\"\nsound = \"gone.ogg\"\n",
         );
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert_eq!(lib.voice("drift").unwrap().sound, None);
-        assert_eq!(lib.voice("ember").unwrap().icon, None);
-        assert_eq!(lib.lines.len(), 1, "line still loads");
-        assert_eq!(lib.lines[0].sound, None);
+        assert_eq!(chorus.voice("drift").unwrap().sound, None);
+        assert_eq!(chorus.voice("ember").unwrap().icon, None);
+        assert_eq!(chorus.lines.len(), 1, "line still loads");
+        assert_eq!(chorus.lines[0].sound, None);
         assert_eq!(warnings.len(), 3, "{warnings:?}");
         assert!(warnings.iter().all(|w| w.file == file));
         assert!(warnings[0].message.contains("missing.ogg"));
@@ -469,11 +471,11 @@ mod tests {
         packs.add("p", "[voices.drift]\nsound = \"ping.ogg\"\n");
         std::fs::write(dir.join("ping.ogg"), b"").unwrap();
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
         assert!(warnings.is_empty());
         assert_eq!(
-            lib.voice("drift").unwrap().sound,
+            chorus.voice("drift").unwrap().sound,
             Some(dir.join("ping.ogg"))
         );
     }
@@ -487,11 +489,11 @@ mod tests {
             "[[lines]]\nvoice = \"drift\"\ntext = \"Borrowed voice.\"\n",
         );
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
         assert!(warnings.is_empty(), "{warnings:?}");
-        assert_eq!(lib.lines.len(), 1);
-        assert_eq!(lib.packs()[1].lines, 1);
+        assert_eq!(chorus.lines.len(), 1);
+        assert_eq!(chorus.packs()[1].lines, 1);
     }
 
     #[test]
@@ -500,11 +502,11 @@ mod tests {
         packs.add("a", "[voices.drift]\ndisplay = \"FIRST\"\n");
         let second = packs.add("b", "[voices.drift]\ndisplay = \"SECOND\"\n");
 
-        let (lib, warnings) = Library::load(packs.dir()).unwrap();
+        let (chorus, warnings) = Chorus::load(packs.dir()).unwrap();
 
-        assert_eq!(lib.voice("drift").unwrap().display, "FIRST");
-        assert_eq!(lib.packs()[0].voices, ["drift"]);
-        assert!(lib.packs()[1].voices.is_empty());
+        assert_eq!(chorus.voice("drift").unwrap().display, "FIRST");
+        assert_eq!(chorus.packs()[0].voices, ["drift"]);
+        assert!(chorus.packs()[1].voices.is_empty());
         assert_one_warning(&warnings, &second, "already defined by pack `a`");
     }
 
@@ -520,10 +522,10 @@ mod tests {
         );
         packs.add("two", "[[lines]]\nvoice = \"drift\"\ntext = \"c\"\n");
 
-        let (lib, _) = Library::load(packs.dir()).unwrap();
+        let (chorus, _) = Chorus::load(packs.dir()).unwrap();
 
         assert_eq!(
-            lib.packs(),
+            chorus.packs(),
             [
                 PackSummary {
                     name: "Desk Voices".into(),

@@ -4,13 +4,13 @@
 //! and checks that asset files exist. Showing a line, playing a sound and
 //! finding the user's config folder are left to the caller.
 
-mod library;
+mod chorus;
 mod pack;
 mod select;
 
 #[cfg(test)]
 mod test_util;
 
-pub use library::{Library, LoadError, PackSummary, Warning};
+pub use chorus::{Chorus, LoadError, PackSummary, Warning};
 pub use pack::{Line, Voice};
 pub use select::{Filter, Interjection};

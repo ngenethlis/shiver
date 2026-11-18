@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0005: Rename Library to Chorus</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0005</span>: Rename <code>Library</code> to <code>Chorus</code></h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p>In <code>shiver-core</code>, the file <code>library.rs</code> sits next to
+<code>lib.rs</code>, the crate's required entry point. The names look like
+duplicates, and “library” also means the Rust library crate itself, so
+“the library” is ambiguous in code and docs.</p>
+
+<h2>Proposal</h2>
+<p>Rename the type that holds every loaded voice and line from
+<code>Library</code> to <code>Chorus</code>: all the voices together. The file
+becomes <code>chorus.rs</code>. Behaviour doesn't change.</p>
+<table>
+  <tr><th>Before</th><th>After</th></tr>
+  <tr><td><code>Library</code></td><td><code>Chorus</code></td></tr>
+  <tr><td><code>shiver-core/src/library.rs</code></td><td><code>shiver-core/src/chorus.rs</code></td></tr>
+  <tr><td><code>library::tests::…</code></td><td><code>chorus::tests::…</code></td></tr>
+  <tr><td><code>let library = …</code></td><td><code>let chorus = …</code></td></tr>
+</table>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>The type, file, module, variables and doc comments</li>
+        <li>Both crates and their tests</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Editing done specs 0001, 0002, 0004: they stay as written, and this
+          spec records the mapping</li>
+        <li>Any behaviour change</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td>Rename the type, not just the file.</td>
+      <td>The file should be named after what it holds, and with no users yet an API change costs nothing.</td></tr>
+  <tr><td><code>Chorus</code>.</td>
+      <td>Thematic: the set of all voices. Short and unlikely to clash.</td></tr>
+  <tr><td>Done specs aren't edited.</td>
+      <td>They record what was built at the time; this spec explains the later change.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li>No <code>Library</code> or <code>library</code> identifiers remain in the code.</li>
+  <li>The same tests pass under their new names, and CI checks are clean.</li>
+</ul>
+
+</main>
+</body>
+</html>

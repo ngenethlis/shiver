@@ -48,44 +48,48 @@ pub fn install(packs_dir: &Path, force: bool) -> anyhow::Result<Outcome> {
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
-    use shiver_core::Library;
+    use shiver_core::Chorus;
 
     use super::*;
 
     const VOICES: [&str; 5] = ["backbone", "clockwork", "lantern", "signal", "static"];
     const TAGS: [&str; 5] = ["break", "focus", "late", "morning", "win"];
 
-    fn installed() -> (tempfile::TempDir, Library) {
+    fn installed() -> (tempfile::TempDir, Chorus) {
         let dir = tempfile::tempdir().unwrap();
         install(dir.path(), false).unwrap();
-        let (lib, warnings) = Library::load(dir.path()).unwrap();
+        let (chorus, warnings) = Chorus::load(dir.path()).unwrap();
         // System sounds may be missing (e.g. on CI); nothing else may warn.
         let other: Vec<_> = warnings
             .iter()
             .filter(|w| !w.message.contains("sound file"))
             .collect();
         assert!(other.is_empty(), "{other:?}");
-        (dir, lib)
+        (dir, chorus)
     }
 
     #[test]
     fn default_pack_loads_cleanly() {
-        let (_dir, lib) = installed();
+        let (_dir, chorus) = installed();
 
-        assert_eq!(lib.packs().len(), 1);
-        assert_eq!(lib.packs()[0].name, "default");
-        let voices: BTreeSet<_> = lib.packs()[0].voices.iter().map(String::as_str).collect();
+        assert_eq!(chorus.packs().len(), 1);
+        assert_eq!(chorus.packs()[0].name, "default");
+        let voices: BTreeSet<_> = chorus.packs()[0]
+            .voices
+            .iter()
+            .map(String::as_str)
+            .collect();
         assert_eq!(voices, BTreeSet::from(VOICES));
 
         let mut per_voice: BTreeMap<&str, usize> = BTreeMap::new();
-        for line in lib.lines() {
+        for line in chorus.lines() {
             *per_voice.entry(line.voice.as_str()).or_default() += 1;
         }
         for voice in VOICES {
             let n = per_voice.get(voice).copied().unwrap_or(0);
             assert!(n >= 5, "voice {voice} has only {n} lines");
             assert!(
-                lib.voice(voice).unwrap().color.is_some(),
+                chorus.voice(voice).unwrap().color.is_some(),
                 "{voice} has a colour"
             );
         }
@@ -93,9 +97,9 @@ mod tests {
 
     #[test]
     fn default_pack_uses_known_tags() {
-        let (_dir, lib) = installed();
+        let (_dir, chorus) = installed();
         let mut uses: BTreeMap<&str, usize> = BTreeMap::new();
-        for tag in lib.lines().iter().flat_map(|l| &l.tags) {
+        for tag in chorus.lines().iter().flat_map(|l| &l.tags) {
             assert!(TAGS.contains(&tag.as_str()), "unknown tag `{tag}`");
             *uses.entry(tag.as_str()).or_default() += 1;
         }

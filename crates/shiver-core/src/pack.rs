@@ -1,7 +1,7 @@
 //! Parsing a single `pack.toml`.
 //!
 //! Parsing applies defaults and resolves relative paths, but doesn't validate
-//! values or touch the filesystem; the library does that when loading.
+//! values or touch the filesystem; the chorus does that when loading.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
