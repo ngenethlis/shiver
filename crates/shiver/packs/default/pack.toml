@@ -1,0 +1,195 @@
+# The default shiver pack, installed by `shiver init`.
+# Edit it freely: change lines, add your own, or copy it to start a new pack.
+# Format: https://github.com/ngenethlis/shiver#packs
+
+[pack]
+name = "default"
+license = "CC0-1.0"
+
+# Sounds are the freedesktop system sounds (package `sound-theme-freedesktop`).
+# If they aren't installed, shiver warns and the voice stays silent.
+
+[voices.backbone]
+display = "BACKBONE"
+color = "#d9822b"
+sound = "/usr/share/sounds/freedesktop/stereo/message.oga"
+
+[voices.clockwork]
+display = "CLOCKWORK"
+color = "#c9a227"
+sound = "/usr/share/sounds/freedesktop/stereo/bell.oga"
+
+[voices.static]
+display = "STATIC"
+color = "#d64545"
+sound = "/usr/share/sounds/freedesktop/stereo/dialog-warning.oga"
+
+[voices.lantern]
+display = "LANTERN"
+color = "#5b8def"
+sound = "/usr/share/sounds/freedesktop/stereo/dialog-information.oga"
+
+[voices.signal]
+display = "SIGNAL"
+color = "#3fb27f"
+sound = "/usr/share/sounds/freedesktop/stereo/complete.oga"
+
+# BACKBONE: the body you forgot you have.
+
+[[lines]]
+voice = "backbone"
+text = "Your shoulders are up by your ears again. Drop them."
+tags = ["focus"]
+
+[[lines]]
+voice = "backbone"
+text = "When did you last drink water? Coffee doesn't count."
+tags = ["break"]
+
+[[lines]]
+voice = "backbone"
+text = "Stand up. The chair will still be here."
+tags = ["break"]
+
+[[lines]]
+voice = "backbone"
+text = "You're leaning toward the screen like it owes you money. Sit back."
+tags = ["focus"]
+
+[[lines]]
+voice = "backbone"
+text = "Unclench your jaw."
+tags = ["focus"]
+
+[[lines]]
+voice = "backbone"
+text = "Your eyes have been fixed at arm's length for an hour. Look out a window."
+tags = ["break"]
+
+# CLOCKWORK: time, and where it went.
+
+[[lines]]
+voice = "clockwork"
+text = "That was not five minutes."
+tags = ["focus"]
+
+[[lines]]
+voice = "clockwork"
+text = "It's later than you think. It always is."
+tags = ["late"]
+
+[[lines]]
+voice = "clockwork"
+text = "The morning is the best part of today you'll get. Spend it on the hard thing."
+tags = ["morning"]
+
+[[lines]]
+voice = "clockwork"
+text = "You've been on this one problem since lunch. Time to ask someone."
+tags = ["focus"]
+
+[[lines]]
+voice = "clockwork"
+text = "Another hour gone. Was it the hour you meant to have?"
+tags = ["late"]
+
+[[lines]]
+voice = "clockwork"
+text = "Start a timer. Thirty minutes on one thing, then you can wander."
+tags = ["morning", "focus"]
+
+# STATIC: the pull of everything except the task.
+
+[[lines]]
+voice = "static"
+text = "You opened a new tab and forgot why. Close it."
+tags = ["focus"]
+
+[[lines]]
+voice = "static"
+text = "Your phone is face up. Turn it over."
+tags = ["focus"]
+
+[[lines]]
+voice = "static"
+text = "Checking the inbox again won't make anything arrive faster."
+tags = ["focus"]
+
+[[lines]]
+voice = "static"
+text = "You're reading the comments. Nothing good lives in the comments."
+tags = ["break"]
+
+[[lines]]
+voice = "static"
+text = "Twelve tabs open, and none of them is the thing you're supposed to be doing."
+tags = ["focus"]
+
+[[lines]]
+voice = "static"
+text = "Scrolling isn't a break. A break is when you get up."
+tags = ["break"]
+
+# LANTERN: knowing when to stop.
+
+[[lines]]
+voice = "lantern"
+text = "The bug will still be there tomorrow. You'll be better at it then."
+tags = ["late"]
+
+[[lines]]
+voice = "lantern"
+text = "Past midnight, every idea feels brilliant. Write it down and check it in the morning."
+tags = ["late"]
+
+[[lines]]
+voice = "lantern"
+text = "Save your work. Close the laptop. That's the whole plan."
+tags = ["late"]
+
+[[lines]]
+voice = "lantern"
+text = "Tired code is tomorrow's bug report."
+tags = ["late"]
+
+[[lines]]
+voice = "lantern"
+text = "Good morning. Nothing is on fire yet. Enjoy that."
+tags = ["morning"]
+
+[[lines]]
+voice = "lantern"
+text = "You've done enough for today. Really."
+tags = ["late", "break"]
+
+# SIGNAL: noticing what went right.
+
+[[lines]]
+voice = "signal"
+text = "It works. Commit before you touch anything else."
+tags = ["win"]
+
+[[lines]]
+voice = "signal"
+text = "The tests are green. Take the win."
+tags = ["win"]
+
+[[lines]]
+voice = "signal"
+text = "You fixed something today that was broken yesterday. That counts."
+tags = ["win"]
+
+[[lines]]
+voice = "signal"
+text = "Small steps still add up. Look how far the last week went."
+tags = ["morning"]
+
+[[lines]]
+voice = "signal"
+text = "That was hard, and you did it anyway."
+tags = ["win"]
+
+[[lines]]
+voice = "signal"
+text = "Write down what you just figured out. Future you will be grateful."
+tags = ["win", "focus"]

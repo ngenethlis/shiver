@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0004: Default pack and shiver init</title>
+<link rel="stylesheet" href="../../../../style.css">
+</head>
+<body>
+<main>
+
+<h1><span class="name">0004</span>: Default pack and <code>shiver init</code></h1>
+<p class="meta">Created 2026-11-18 · <span class="status">done</span></p>
+
+<h2>Problem</h2>
+<p>After installing, there are no packs, so <code>shiver say</code> and
+<code>shiver notify</code> just fail with “no packs found”. New users have to
+write a pack before seeing anything, and have no example to start from.</p>
+
+<h2>Proposal</h2>
+<p>Ship an original default pack and a command that installs it:</p>
+<pre><code>$ shiver init
+created ~/.config/shiver/packs/default/pack.toml
+try `shiver say` or `shiver notify`; edit the pack to make it yours</code></pre>
+<ul>
+  <li>The pack is compiled into the binary, so <code>init</code> works without
+    the source code. It's written as a normal pack folder that users can edit.</li>
+  <li><code>init</code> won't overwrite an existing default pack unless given
+    <code>--force</code>.</li>
+  <li>When <code>say</code> or <code>notify</code> find no packs, the error
+    suggests running <code>shiver init</code>.</li>
+</ul>
+
+<h3>The pack</h3>
+<p>Five original voices about life at a computer, about 30 lines in all, tagged
+so <code>--tag</code> is useful. Sounds point at the desktop's standard system
+sounds. Released as CC0.</p>
+<table>
+  <tr><th>Voice</th><th>About</th><th>Sound</th><th>Example line</th></tr>
+  <tr><td>BACKBONE</td><td>body: posture, water, stretching</td><td><code>message.oga</code></td>
+      <td>“Your shoulders are up by your ears again. Drop them.”</td></tr>
+  <tr><td>CLOCKWORK</td><td>time passing</td><td><code>bell.oga</code></td>
+      <td>“That was not five minutes.”</td></tr>
+  <tr><td>STATIC</td><td>distraction and the urge to scroll</td><td><code>dialog-warning.oga</code></td>
+      <td>“You opened a new tab and forgot why. Close it.”</td></tr>
+  <tr><td>LANTERN</td><td>rest and stopping for the night</td><td><code>dialog-information.oga</code></td>
+      <td>“The bug will still be there tomorrow. You'll be better at it then.”</td></tr>
+  <tr><td>SIGNAL</td><td>small wins and encouragement</td><td><code>complete.oga</code></td>
+      <td>“It works. Commit before you touch anything else.”</td></tr>
+</table>
+<p>Tags: <code>late</code>, <code>morning</code>, <code>break</code>,
+<code>focus</code>, <code>win</code>.</p>
+
+<h2>Scope</h2>
+<table>
+  <tr><th>In</th><th>Out</th></tr>
+  <tr>
+    <td>
+      <ul>
+        <li>The default pack (text, CC0)</li>
+        <li><code>shiver init [--force]</code></li>
+        <li>“run shiver init” hint on “no packs found”</li>
+        <li>README Quick Start uses <code>shiver init</code></li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li>Our own sound files</li>
+        <li>Icons</li>
+        <li>systemd timer for random popups (next spec)</li>
+        <li>More than one built-in pack</li>
+      </ul>
+    </td>
+  </tr>
+</table>
+
+<h2>Decisions</h2>
+<table>
+  <tr><th>Choice</th><th>Why</th></tr>
+  <tr><td><code>init</code> writes the pack to disk instead of using it silently from the binary.</td>
+      <td>The pack becomes the user's to edit, and it's visible in <code>shiver list</code> like any other.</td></tr>
+  <tr><td>Sounds are the freedesktop system sounds, by absolute path.</td>
+      <td>Installed on most Linux desktops (<code>sound-theme-freedesktop</code>). Where they're missing, shiver warns and stays silent.</td></tr>
+  <tr><td>The pack lives in the repo at <code>crates/shiver/packs/default/</code> with its licence stated there.</td>
+      <td>Must be inside the crate to be compiled in; the licence note follows the content rule in <code>AGENTS.md</code>.</td></tr>
+  <tr><td>Without <code>--force</code>, an existing pack is never overwritten.</td>
+      <td>Users may have edited it.</td></tr>
+</table>
+
+<h2>Done when</h2>
+<ul>
+  <li><code>shiver init</code> creates the pack, refuses to overwrite it, and
+    <code>--force</code> replaces it; all tested.</li>
+  <li>The pack loads with no warnings where system sounds are installed, and every
+    voice has lines.</li>
+  <li>CI checks pass.</li>
+</ul>
+
+</main>
+</body>
+</html>

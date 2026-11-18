@@ -177,7 +177,10 @@ fn say_without_packs_fails() {
     assert_eq!(stdout(&out), "");
     assert_eq!(
         stderr(&out),
-        format!("shiver: no packs found in {}\n", packs.dir().display())
+        format!(
+            "shiver: no packs found in {}; run `shiver init` to install the default pack\n",
+            packs.dir().display()
+        )
     );
 }
 
@@ -233,6 +236,79 @@ fn list_without_packs() {
     assert!(out.status.success());
     assert_eq!(
         stdout(&out),
-        format!("no packs found in {}\n", packs.dir().display())
+        format!(
+            "no packs found in {}\nrun `shiver init` to install the default pack\n",
+            packs.dir().display()
+        )
     );
+}
+
+const INIT_HINT: &str = "try `shiver say` or `shiver notify`; edit the pack to make it yours\n";
+
+#[test]
+fn init_creates_default_pack() {
+    let packs = Packs::new();
+    let file = packs.dir().join("default/pack.toml");
+    let out = packs.run(&["init"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        format!("created {}\n{INIT_HINT}", file.display())
+    );
+    assert!(file.is_file());
+
+    let out = packs.run(&["list"]);
+    assert!(
+        stdout(&out).starts_with("default (5 voices, "),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn init_refuses_to_overwrite() {
+    let packs = Packs::new();
+    packs.add("default", "# my edits\n");
+    let file = packs.dir().join("default/pack.toml");
+
+    let out = packs.run(&["init"]);
+
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        stderr(&out),
+        format!(
+            "shiver: {} already exists; use --force to overwrite\n",
+            file.display()
+        )
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "# my edits\n");
+}
+
+#[test]
+fn init_force_overwrites() {
+    let packs = Packs::new();
+    packs.add("default", "# my edits\n");
+    let file = packs.dir().join("default/pack.toml");
+
+    let out = packs.run(&["init", "--force"]);
+
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        format!("replaced {}\n{INIT_HINT}", file.display())
+    );
+    assert!(
+        std::fs::read_to_string(&file)
+            .unwrap()
+            .contains("[voices.backbone]")
+    );
+}
+
+#[test]
+fn init_ignores_broken_packs() {
+    let packs = Packs::new();
+    packs.add("broken", "not = = toml");
+    let out = packs.run(&["init"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(stderr(&out), "");
 }

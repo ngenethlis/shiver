@@ -128,6 +128,11 @@ impl Library {
     pub fn voice(&self, key: &str) -> Option<&Voice> {
         self.voices.get(key)
     }
+
+    /// All loaded lines, in folder order and then file order.
+    pub fn lines(&self) -> &[Line] {
+        &self.lines
+    }
 }
 
 /// Reads and parses each pack folder in `dir`, in folder-name order.
@@ -295,7 +300,7 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         let names: Vec<_> = lib.packs().iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["a-first", "b-second"]);
-        let texts: Vec<_> = lib.lines.iter().map(|l| l.text.as_str()).collect();
+        let texts: Vec<_> = lib.lines().iter().map(|l| l.text.as_str()).collect();
         assert_eq!(texts, ["A", "B"]);
     }
 

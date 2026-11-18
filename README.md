@@ -24,6 +24,8 @@ generic: every voice, line and sound comes from packs that you write.
 
 - **Your own voices:** voices, lines, colours, icons and sounds come from plain
   TOML packs.
+- **Starter pack:** `shiver init` installs five original voices with about 30
+  lines to start from.
 - **Terminal:** `shiver say` prints a line in a speech box, with the voice name
   in its colour.
 - **Desktop notifications:** `shiver notify` works with any freedesktop
@@ -51,34 +53,27 @@ cargo install --path crates/shiver
 
 ## Quick Start
 
-Make a pack:
-
-```sh
-mkdir -p ~/.config/shiver/packs/mine
-cat > ~/.config/shiver/packs/mine/pack.toml <<'EOF'
-[voices.drift]
-display = "DRIFT"
-color = "#8a5cd6"
-sound = "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"
-
-[[lines]]
-voice = "drift"
-text = "Water the plant."
-tags = ["idle"]
-EOF
-```
-
-Then:
+Install the default pack, then ask for a line:
 
 ```console
-$ shiver say
- DRIFT
-╭──────────────────╮
-│ Water the plant. │
-╰──────────────────╯
+$ shiver init
+created ~/.config/shiver/packs/default/pack.toml
+try `shiver say` or `shiver notify`; edit the pack to make it yours
 
-$ shiver notify       # desktop notification + sound
+$ shiver say --voice lantern
+ LANTERN
+╭──────────────────────────────────────────────────────────────╮
+│ The bug will still be there tomorrow. You'll be better at it │
+│ then.                                                        │
+╰──────────────────────────────────────────────────────────────╯
+
+$ shiver notify --tag break    # desktop notification + sound
 ```
+
+The default pack has five voices (BACKBONE, CLOCKWORK, STATIC, LANTERN, SIGNAL)
+and the tags `morning`, `focus`, `break`, `late` and `win`. Edit
+`~/.config/shiver/packs/default/pack.toml` to change it, or add packs of your own
+next to it.
 
 ## Packs
 
@@ -117,6 +112,7 @@ Run `shiver list` to see what's loaded. Problems are printed as warnings.
 | `shiver notify [--voice V] [--tag T] [--no-sound]` | Show a random line as a notification, with sound |
 | `shiver notify --voice V --text "..." [--sound FILE]` | Show a one-off message |
 | `shiver list` | List packs, voices and line counts |
+| `shiver init [--force]` | Install the default pack |
 
 Use another packs folder with `--packs-dir DIR` or `SHIVER_PACKS_DIR`.
 Colour is turned off when output isn't a terminal, or with `NO_COLOR=1`.
@@ -124,7 +120,7 @@ Colour is turned off when output isn't a terminal, or with `NO_COLOR=1`.
 ## Roadmap
 
 - **v0:** CLI, stdout and desktop notifications, sound via PipeWire/PulseAudio.
-  Still to come: a systemd timer for random popups and an example pack.
+  Still to come: a systemd timer for random popups.
 - **v1:** context-aware selection (time of day, idle, failed shell command)
   and cooldowns.
 - **v2:** a custom Wayland layer-shell overlay and an optional daemon.
