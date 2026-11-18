@@ -4,20 +4,22 @@ Ideas and deferred work that don't have a spec yet. When starting one, turn it
 into a spec under `docs/specs/` (see `AGENTS.md`) and remove it from here.
 Rough priority within each section: top first.
 
-## Next (v1: context)
+## Next
 
-- **Context-aware picks:** choose tags from the situation automatically, e.g.
-  `morning`/`late` from the time of day, `idle` after a stretch of inactivity.
-- **Shell hook:** a zsh `precmd` example (and bash equivalent) that runs
-  `shiver notify --tag fail` when a command exits non-zero.
-- **Cooldowns:** don't repeat a line (or a voice) that was shown recently. Needs
-  a small state file, e.g. under `~/.local/state/shiver/`.
-- **Config file:** `~/.config/shiver/config.toml` for enabled packs, default
-  output and volume.
+- **Idle context:** an `idle` tag after a stretch of inactivity. Needs
+  desktop-specific idle detection (e.g. the Wayland idle-notify protocol or
+  `org.freedesktop.ScreenSaver`), so it's separate from the time-of-day tags.
+- **Reply choices on popups:** notification action buttons, so a voice can ask
+  and you answer.
+- **Escalating lines** for repeated failures of the same command, and a
+  success hook ("the build finally passed").
+- **Weekday tags** (`weekend`), and per-voice settings in the config file.
+- **fish** support for the shell hook.
 
 ## Timer
 
 - Per-weekday schedules (e.g. weekdays only, or different hours at weekends).
+- Timer schedule in the config file (it lives in the systemd unit today).
 - Support for systems without systemd.
 
 ## Content
